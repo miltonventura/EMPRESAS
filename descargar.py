@@ -1,27 +1,62 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Descarga restaurantes, inmobiliarias, residenciales y cafe desde OpenStreetMap
-para la zona del volcan de San Salvador (El Salvador).
+Descarga empresas desde OpenStreetMap para 28 distritos de El Salvador
+(AMSS y la franja costera de La Libertad).
 
 Uso:   pip install requests
        python3 descargar.py
 
-Deja los archivos CSV y GeoJSON en la carpeta 'datos'.
+Deja los archivos CSV y GeoJSON en la carpeta 'datos'. Cada resultado queda
+etiquetado con el distrito en el que cae.
+
 Datos (c) colaboradores de OpenStreetMap, licencia ODbL.
 """
 
+import collections
 import csv
 import json
 import os
+import re
 import time
 
 import requests
 
 # ---------------------------------------------------------------- AJUSTES ---
-LAT, LON = 13.7342, -89.2864   # crater El Boqueron, volcan de San Salvador
-RADIO = 15000                  # metros a la redonda (15 km)
-CARPETA = "datos"              # donde se guardan los resultados
+CARPETA = "datos"   # donde se guardan los resultados
+
+# Distritos a consultar. Cada patron admite las variantes de escritura con las
+# que el nombre puede estar en OpenStreetMap (con o sin tilde, etc.).
+DISTRITOS = [
+    ("San Salvador",          "San Salvador"),
+    ("Ayutuxtepeque",         "Ayutuxtepeque"),
+    ("Mejicanos",             "Mejicanos"),
+    ("Cuscatancingo",         "Cuscatancingo"),
+    ("Ciudad Delgado",        "(Ciudad )?Delgado"),
+    ("Apopa",                 "Apopa"),
+    ("Nejapa",                "Nejapa"),
+    ("Ilopango",              "Ilopango"),
+    ("San Martin",            "San Mart[ií]n"),
+    ("Soyapango",             "Soyapango"),
+    ("Tonacatepeque",         "Tonacatepeque"),
+    ("San Marcos",            "San Marcos"),
+    ("Panchimalco",           "Panchimalco"),
+    ("Rosario de Mora",       "Rosario de Mora"),
+    ("Santiago Texacuangos",  "Santiago Texacuangos"),
+    ("Santo Tomas",           "Santo Tom[áa]s"),
+    ("Antiguo Cuscatlan",     "Antiguo Cuscatl[áa]n"),
+    ("Huizucar",              "Huiz[úu]car"),
+    ("Nuevo Cuscatlan",       "Nuevo Cuscatl[áa]n"),
+    ("San Jose Villanueva",   "San Jos[eé] Villa ?[Nn]ueva"),
+    ("Zaragoza",              "Zaragoza"),
+    ("Chiltiupan",            "Chiltiup[áa]n"),
+    ("Jicalapa",              "Jicalapa"),
+    ("La Libertad",           "La Libertad"),
+    ("Tamanique",             "Tamanique"),
+    ("Teotepeque",            "Teotepeque"),
+    ("Santa Tecla",           "Santa Tecla|Nueva San Salvador"),
+    ("Comasagua",             "Comasagua"),
+]
 
 SERVIDORES = [
     "https://overpass-api.de/api/interpreter",
@@ -60,36 +95,109 @@ CATEGORIAS = {
     ],
 }
 
-COLUMNAS = ["categoria", "subcategoria", "nombre", "operador", "latitud", "longitud",
-            "direccion", "ciudad", "telefono", "sitio_web", "horario",
-            "producto_o_cocina", "osm_tipo", "osm_id", "url_osm"]
+COLUMNAS = ["categoria", "subcategoria", "nombre", "distrito", "operador",
+            "latitud", "longitud", "direccion", "ciudad", "telefono",
+            "sitio_web", "horario", "producto_o_cocina",
+            "osm_tipo", "osm_id", "url_osm"]
 
 LLAVES_TIPO = ["amenity", "shop", "office", "craft", "landuse", "place",
                "building", "man_made", "crop", "produce", "product"]
 
+# Rectangulo que contiene a El Salvador; acota la busqueda de los limites
+# administrativos para que no aparezcan homonimos de otros paises.
+BBOX_PAIS = "13.00,-90.30,14.60,-87.60"
 
-def consultar(categoria):
-    """Envia la consulta a Overpass y devuelve la lista de elementos."""
-    filtros = "\n".join("  %s(around:%d,%s,%s);" % (f, RADIO, LAT, LON)
-                        for f in CATEGORIAS[categoria])
-    consulta = "[out:json][timeout:180];\n(\n%s\n);\nout tags center;" % filtros
+# Selecciona los limites de los distritos y los convierte en area de busqueda.
+SELECCION = (
+    'rel(%s)["boundary"="administrative"]["admin_level"!="2"]["admin_level"!="4"]'
+    '["name"~"^(%s)$"]->.d;'
+) % (BBOX_PAIS, "|".join(patron for _, patron in DISTRITOS))
 
+TIMEOUT_CONSULTA = 600   # segundos que se le piden a Overpass
+PASO_REJILLA = 0.005     # ~550 m; agrupa los segmentos de frontera por latitud
+
+
+# ------------------------------------------------------------- OVERPASS ---
+def consultar(consulta, etiqueta):
+    """Envia una consulta a Overpass y devuelve la respuesta ya convertida."""
     for intento in range(4):
         servidor = SERVIDORES[intento % len(SERVIDORES)]
         try:
-            r = requests.post(servidor, data={"data": consulta}, timeout=300,
-                              headers={"User-Agent": "empresas-volcan/1.0"})
+            r = requests.post(servidor, data={"data": consulta}, timeout=900,
+                              headers={"User-Agent": "empresas-sv/1.0"})
             if r.status_code == 200:
-                return r.json().get("elements", [])
+                return r.json()
             print("   %s respondio %d" % (servidor, r.status_code))
         except Exception as exc:
             print("   %s fallo: %s" % (servidor, exc))
-        espera = 5 * (2 ** intento)
-        print("   reintentando en %d s..." % espera)
+        espera = 10 * (2 ** intento)
+        print("   reintentando %s en %d s..." % (etiqueta, espera))
         time.sleep(espera)
-    raise SystemExit("Overpass no respondio. Intenta de nuevo en unos minutos.")
+    raise SystemExit("Overpass no respondio (%s). Intenta de nuevo mas tarde." % etiqueta)
 
 
+def consulta_de_categoria(categoria):
+    filtros = "\n".join("  %s(area.zona);" % f for f in CATEGORIAS[categoria])
+    return ("[out:json][timeout:%d];\n%s\n.d map_to_area ->.zona;\n(\n%s\n);\n"
+            "out tags center;" % (TIMEOUT_CONSULTA, SELECCION, filtros))
+
+
+# ------------------------------------------------------------ DISTRITOS ---
+def descargar_distritos():
+    """Baja las fronteras de los distritos (y las guarda en cache)."""
+    cache = os.path.join(CARPETA, "_distritos.json")
+    if os.path.exists(cache):
+        print("Fronteras de distritos: usando la copia guardada.")
+        with open(cache, encoding="utf-8") as fh:
+            return json.load(fh)
+
+    print("Descargando las fronteras de los %d distritos..." % len(DISTRITOS))
+    consulta = ("[out:json][timeout:%d];\n%s\n.d out geom;" % (TIMEOUT_CONSULTA, SELECCION))
+    datos = consultar(consulta, "fronteras")
+    with open(cache, "w", encoding="utf-8") as fh:
+        json.dump(datos, fh)
+    return datos
+
+
+def armar_poligonos(datos):
+    """Convierte las relaciones de frontera en segmentos agrupados por latitud."""
+    poligonos = {}
+    for relacion in datos.get("elements", []):
+        nombre = relacion.get("tags", {}).get("name", "")
+        if not nombre or nombre in poligonos:
+            continue
+        rejilla = collections.defaultdict(list)
+        for miembro in relacion.get("members", []):
+            puntos = miembro.get("geometry") or []
+            for a, b in zip(puntos, puntos[1:]):
+                if a["lat"] == b["lat"]:
+                    continue   # los segmentos horizontales no cruzan el rayo
+                segmento = (a["lat"], a["lon"], b["lat"], b["lon"])
+                desde = int(min(a["lat"], b["lat"]) / PASO_REJILLA)
+                hasta = int(max(a["lat"], b["lat"]) / PASO_REJILLA)
+                for banda in range(desde, hasta + 1):
+                    rejilla[banda].append(segmento)
+        if rejilla:
+            poligonos[nombre] = dict(rejilla)
+    return poligonos
+
+
+def distrito_de(lat, lon, poligonos):
+    """Devuelve el distrito que contiene al punto, o '' si cae fuera."""
+    banda = int(lat / PASO_REJILLA)
+    for nombre, rejilla in poligonos.items():
+        cruces = 0
+        for lat1, lon1, lat2, lon2 in rejilla.get(banda, ()):
+            if (lat1 > lat) != (lat2 > lat):
+                corte = lon1 + (lat - lat1) * (lon2 - lon1) / (lat2 - lat1)
+                if lon < corte:
+                    cruces += 1
+        if cruces % 2:
+            return nombre
+    return ""
+
+
+# -------------------------------------------------------------- SALIDA ---
 def valor(tags, *llaves):
     for llave in llaves:
         if tags.get(llave):
@@ -97,7 +205,7 @@ def valor(tags, *llaves):
     return ""
 
 
-def fila(elemento, categoria):
+def fila(elemento, categoria, poligonos):
     tags = elemento.get("tags", {})
     centro = elemento.get("center", {})
     lat = elemento.get("lat", centro.get("lat"))
@@ -117,6 +225,7 @@ def fila(elemento, categoria):
         "categoria": categoria,
         "subcategoria": subcat,
         "nombre": valor(tags, "name", "name:es", "brand", "operator"),
+        "distrito": distrito_de(lat, lon, poligonos),
         "operador": valor(tags, "operator", "brand"),
         "latitud": lat,
         "longitud": lon,
@@ -141,12 +250,23 @@ def guardar_csv(ruta, filas):
 
 def main():
     os.makedirs(CARPETA, exist_ok=True)
-    todas = {}
 
+    poligonos = armar_poligonos(descargar_distritos())
+    print("  %d distritos encontrados" % len(poligonos))
+    faltan = [n for n, patron in DISTRITOS
+              if not any(re.fullmatch(patron, nombre, re.IGNORECASE)
+                         for nombre in poligonos)]
+    if faltan:
+        print("  OJO, sin frontera en OSM: %s" % ", ".join(faltan))
+    print()
+
+    todas = {}
     for categoria in CATEGORIAS:
         print("Descargando %s..." % categoria)
-        filas = [f for f in (fila(e, categoria) for e in consultar(categoria)) if f]
-        filas.sort(key=lambda f: (f["nombre"] == "", f["nombre"].lower()))
+        datos = consultar(consulta_de_categoria(categoria), categoria)
+        filas = [f for f in (fila(e, categoria, poligonos)
+                             for e in datos.get("elements", [])) if f]
+        filas.sort(key=lambda f: (f["distrito"], f["nombre"] == "", f["nombre"].lower()))
 
         ruta = os.path.join(CARPETA, "empresas_%s.csv" % categoria)
         guardar_csv(ruta, filas)
@@ -160,9 +280,10 @@ def main():
                     todas[clave]["categoria"] += "|" + categoria
             else:
                 todas[clave] = dict(f)
-        time.sleep(3)   # pausa amable con el servidor publico
+        time.sleep(5)   # pausa amable con el servidor publico
 
-    filas = sorted(todas.values(), key=lambda f: (f["categoria"], f["nombre"].lower()))
+    filas = sorted(todas.values(),
+                   key=lambda f: (f["distrito"], f["categoria"], f["nombre"].lower()))
     guardar_csv(os.path.join(CARPETA, "empresas_todas.csv"), filas)
 
     geojson = {"type": "FeatureCollection", "features": [
@@ -174,7 +295,11 @@ def main():
         json.dump(geojson, fh, ensure_ascii=False, indent=1)
 
     print("\nTotal sin duplicados: %d lugares" % len(filas))
-    print("  %s/empresas_todas.csv" % CARPETA)
+    por_distrito = collections.Counter(f["distrito"] or "(fuera de los distritos)"
+                                       for f in filas)
+    for nombre, cuantos in por_distrito.most_common():
+        print("  %-24s %5d" % (nombre, cuantos))
+    print("\n  %s/empresas_todas.csv" % CARPETA)
     print("  %s/empresas.geojson" % CARPETA)
     print("\nDatos (c) colaboradores de OpenStreetMap, licencia ODbL.")
 

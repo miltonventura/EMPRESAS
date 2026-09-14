@@ -105,6 +105,19 @@ con la extensión centrada en el volcán.
 ## Script de un solo archivo
 
 `descargar.py` es la versión copia-y-pega: sin argumentos ni opciones, se corre con
-`python3 descargar.py` y descarga las cuatro categorías a la carpeta `datos/`.
-Para cambiar la zona se editan `LAT`, `LON` y `RADIO` en las primeras líneas.
-`overpass_empresas.py` es la versión con opciones de línea de comandos.
+`python3 descargar.py`.
+
+**Su área de búsqueda son 28 distritos** (el AMSS completo más la franja costera de
+La Libertad), no el círculo de 15 km: San Salvador, Ayutuxtepeque, Mejicanos,
+Cuscatancingo, Ciudad Delgado, Apopa, Nejapa, Ilopango, San Martín, Soyapango,
+Tonacatepeque, San Marcos, Panchimalco, Rosario de Mora, Santiago Texacuangos,
+Santo Tomás, Antiguo Cuscatlán, Huizúcar, Nuevo Cuscatlán, San José Villanueva,
+Zaragoza, Chiltiupán, Jicalapa, La Libertad, Tamanique, Teotepeque, Santa Tecla
+y Comasagua. La lista se edita en `DISTRITOS`, al inicio del archivo.
+
+Usa las fronteras administrativas reales de OpenStreetMap, avisa si algún distrito
+no aparece en OSM, y **etiqueta cada resultado con el distrito donde cae** (columna
+`distrito`). Las fronteras se guardan en `datos/_distritos.json` para no volver a
+descargarlas; bórralo si cambias la lista de distritos.
+
+`overpass_empresas.py` sigue trabajando por radio y con opciones de línea de comandos.
