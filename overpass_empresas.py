@@ -4,11 +4,12 @@
 Descarga nombres y ubicaciones de empresas desde OpenStreetMap (API Overpass)
 para la zona del volcan de San Salvador (Quezaltepeque), El Salvador.
 
-Categorias incluidas:
-  - restaurantes  : restaurantes, comida rapida, cafeterias, bares, pupuserias...
+Categorias que se descargan por defecto:
+  - restaurantes  : restaurantes, comida rapida, bares, pupuserias, panaderias
   - inmobiliarias : agentes y administradoras de bienes raices, constructoras
-  - agricultura   : fincas, cafetales, viveros, agroservicios, beneficios de cafe
-  - residenciales : (opcional) urbanizaciones y residenciales con nombre
+  - residenciales : residenciales, colonias, urbanizaciones, condominios, apartamentos
+  - cafe          : cafetales, beneficios, tostadurias y cafeterias
+Extra (con --categorias): agricultura (agroservicios, fincas, viveros)
 
 Salidas en la carpeta indicada con --salida:
   empresas_<categoria>.csv, empresas_todas.csv y empresas.geojson
@@ -44,37 +45,55 @@ ENDPOINTS = [
 ]
 
 CATEGORIAS = {
+    # 1) Restaurantes y comida preparada
     "restaurantes": [
-        'nwr["amenity"~"^(restaurant|fast_food|cafe|bar|pub|ice_cream|food_court|biergarten)$"]',
-        'nwr["shop"~"^(bakery|coffee|deli|pastry|butcher|greengrocer|convenience|supermarket)$"]',
+        'nwr["amenity"~"^(restaurant|fast_food|bar|pub|ice_cream|food_court|biergarten)$"]',
+        'nwr["shop"~"^(bakery|pastry|deli)$"]',
+        'nwr["cuisine"~"pupusa|salvadoran",i]',
     ],
+    # 2a) Inversiones inmobiliarias: las empresas
     "inmobiliarias": [
         'nwr["office"~"^(estate_agent|property_management|developer|construction_company)$"]',
         'nwr["shop"="estate_agent"]',
         'nwr["craft"="builder"]',
         'nwr["office"="architect"]',
+        'nwr["name"~"inmobiliari|bienes ra|constructora|urbanizadora|desarrollos",i][!"highway"][!"landuse"][!"place"]',
     ],
+    # 2b) Inversiones inmobiliarias: el producto (residenciales, colonias, apartamentos)
+    "residenciales": [
+        'nwr["landuse"="residential"]["name"]',
+        'nwr["place"~"^(neighbourhood|suburb|quarter|city_block)$"]["name"]',
+        'nwr["building"~"^(apartments|residential)$"]["name"]',
+        'nwr["residential"~"^(apartments|urban|gated)$"]["name"]',
+        'nwr["name"~"residencial|condominio|apartament|urbanizaci|lotificaci|reparto |colonia ",i][!"highway"]',
+    ],
+    # 3) Cafe: cafetales, beneficios, tostadurias y cafeterias
+    "cafe": [
+        'nwr["amenity"="cafe"]',
+        'nwr["shop"="coffee"]',
+        'nwr["craft"="coffee_roastery"]',
+        'nwr["cuisine"~"coffee",i]',
+        'nwr["crop"~"coffee|caf",i]',
+        'nwr["produce"~"coffee|caf",i]',
+        'nwr["product"~"coffee|caf",i]',
+        'nwr["trees"~"coffee",i]',
+        'nwr["name"~"caf[e\u00e9]|cafetal|beneficio|tostadur|finca ",i][!"highway"]',
+    ],
+    # Extra (no se descarga por defecto): resto del agro
     "agricultura": [
         'nwr["shop"~"^(agrarian|farm|garden_centre)$"]',
         'nwr["craft"~"^(agricultural_engines|distillery|winery)$"]',
-        'nwr["landuse"~"^(farmland|orchard|vineyard|greenhouse_horticulture|plant_nursery|meadow)$"]["name"]',
+        'nwr["landuse"~"^(farmland|orchard|vineyard|greenhouse_horticulture|plant_nursery)$"]["name"]',
         'nwr["place"="farm"]',
-        'nwr["crop"]',
-        'nwr["product"~"coffee|caf",i]["name"]',
         'nwr["man_made"="works"]["name"]',
-    ],
-    # No se descarga por defecto: son poligonos de urbanizaciones, no empresas.
-    "residenciales": [
-        'nwr["landuse"="residential"]["name"]',
-        'nwr["building"="apartments"]["name"]',
     ],
 }
 
-POR_DEFECTO = ["restaurantes", "inmobiliarias", "agricultura"]
+POR_DEFECTO = ["restaurantes", "inmobiliarias", "residenciales", "cafe"]
 
 # Orden de prioridad para deducir la subcategoria de cada elemento
-LLAVES_TIPO = ["amenity", "shop", "office", "craft", "landuse", "place",
-               "man_made", "building", "tourism", "industrial"]
+LLAVES_TIPO = ["amenity", "shop", "office", "craft", "landuse", "residential", "place",
+               "man_made", "building", "tourism", "crop", "produce", "product"]
 
 COLUMNAS = ["categoria", "subcategoria", "nombre", "marca", "operador",
             "latitud", "longitud", "osm_tipo", "osm_id", "url_osm",
@@ -126,7 +145,7 @@ def subcategoria(tags):
     for llave in LLAVES_TIPO:
         if llave in tags:
             return "{}={}".format(llave, tags[llave])
-    return ""
+    return "sin_clasificar"
 
 
 def primero(tags, *llaves):

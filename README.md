@@ -1,22 +1,33 @@
 # EMPRESAS — datos de empresas del volcán de San Salvador (OpenStreetMap)
 
-Descarga **nombres y ubicaciones** de negocios en la zona del volcán de San Salvador
-(Quezaltepeque), El Salvador, usando la **API Overpass** de OpenStreetMap.
+Descarga **nombres y ubicaciones** desde la **API Overpass** de OpenStreetMap para
+la zona del volcán de San Salvador (Quezaltepeque), El Salvador.
 
 Zona por defecto: círculo de **15 km** alrededor del cráter El Boquerón
 (`13.7342, -89.2864`). Cubre Santa Tecla, Nejapa, Quezaltepeque, Colón,
 Antiguo Cuscatlán y el poniente de San Salvador.
 
-## Categorías
+## Las tres categorías
 
-| Categoría | Qué trae (etiquetas OSM) |
-|---|---|
-| `restaurantes` | `amenity=restaurant/fast_food/cafe/bar/pub/ice_cream/food_court`, más panaderías, cafés de venta, supermercados y tiendas de alimentos |
-| `inmobiliarias` | `office=estate_agent/property_management/developer/construction_company`, `shop=estate_agent`, `craft=builder`, `office=architect` |
-| `agricultura` | `shop=agrarian/farm/garden_centre`, `craft=agricultural_engines`, fincas y cafetales con nombre (`landuse=farmland/orchard/...`, `crop=*`), `place=farm`, beneficios de café (`product=coffee`) |
-| `residenciales` | *(opcional, no se baja por defecto)* urbanizaciones y residenciales con nombre |
+| Categoría | Qué trae | Etiquetas OSM que consulta |
+|---|---|---|
+| **`restaurantes`** | Restaurantes, comida rápida, pupuserías, bares, panaderías | `amenity=restaurant/fast_food/bar/pub/ice_cream/food_court`, `shop=bakery/pastry/deli`, `cuisine=pupusa` |
+| **`inmobiliarias`** | Las **empresas**: corredores de bienes raíces, administradoras, constructoras, urbanizadoras | `office=estate_agent/property_management/developer/construction_company`, `shop=estate_agent`, `craft=builder`, `office=architect`, y nombres con *inmobiliaria / bienes raíces / constructora / urbanizadora* |
+| **`residenciales`** | El **producto**: residenciales, colonias, urbanizaciones, lotificaciones, condominios y apartamentos | `landuse=residential` con nombre, `place=neighbourhood/suburb/quarter/city_block`, `building=apartments/residential`, y nombres con *residencial / colonia / condominio / apartamentos / urbanización / lotificación / reparto* |
+| **`cafe`** | Toda la cadena: cafetales y fincas, beneficios, tostadurías y cafeterías | `crop=coffee`, `produce/product=coffee`, `trees=coffee_plants`, `amenity=cafe`, `shop=coffee`, `craft=coffee_roastery`, y nombres con *café / cafetal / beneficio / tostaduría / finca* |
 
-## Opción A — script (recomendado, deja CSV + GeoJSON)
+Las cuatro se descargan por defecto: `inmobiliarias` y `residenciales` son las dos
+mitades de *inversiones inmobiliarias* y se separan en archivos distintos para que
+puedas filtrar empresa vs. propiedad. Existe además `agricultura` (agroservicios,
+viveros, resto de fincas), que **no** se baja por defecto.
+
+Además de las etiquetas formales, las tres categorías buscan **por nombre**
+(p. ej. cualquier elemento llamado «Residencial …» o «Beneficio …»), porque en
+El Salvador mucho está mapeado sin la etiqueta correcta. Eso trae algo de ruido:
+revisa la columna `subcategoria`, donde `sin_clasificar` marca justamente esos
+hallazgos por nombre.
+
+## Opción A — script (deja CSV + GeoJSON)
 
 ```bash
 pip install -r requirements.txt
@@ -25,9 +36,11 @@ python3 overpass_empresas.py
 
 Genera en `datos/`:
 
-- `empresas_restaurantes.csv`, `empresas_inmobiliarias.csv`, `empresas_agricultura.csv`
-- `empresas_todas.csv` — todo junto, sin duplicados
-- `empresas.geojson` — para abrir en QGIS, Google My Maps, Kepler.gl o geojson.io
+- `empresas_restaurantes.csv`, `empresas_inmobiliarias.csv`,
+  `empresas_residenciales.csv`, `empresas_cafe.csv`
+- `empresas_todas.csv` — todo junto, sin duplicados (si un lugar cae en dos
+  categorías, la columna `categoria` las une con `|`)
+- `empresas.geojson` — para QGIS, Google My Maps, Kepler.gl o geojson.io
 
 Columnas: categoría, subcategoría, nombre, marca, operador, latitud, longitud,
 tipo e id de OSM, enlace al elemento, dirección, ciudad, teléfono, correo,
@@ -39,8 +52,11 @@ sitio web, facebook, horario, producto/cocina y descripción.
 # Radio más amplio (25 km)
 python3 overpass_empresas.py --radio 25000
 
-# Solo dos categorías, incluyendo residenciales
-python3 overpass_empresas.py --categorias restaurantes residenciales
+# Solo una categoría
+python3 overpass_empresas.py --categorias cafe
+
+# Sumar el resto del agro
+python3 overpass_empresas.py --categorias restaurantes inmobiliarias residenciales cafe agricultura
 
 # Rectángulo en vez de círculo: sur oeste norte este
 python3 overpass_empresas.py --bbox 13.60 -89.45 13.90 -89.15
@@ -62,25 +78,26 @@ El script reintenta con espera creciente y rota entre tres servidores Overpass
 
 1. Abrir <https://overpass-turbo.eu>
 2. Pegar el contenido de `consultas/restaurantes.overpassql`
-   (o `inmobiliarias`, `agricultura`, `residenciales`)
+   (o `inmobiliarias`, `residenciales`, `cafe`, `agricultura`)
 3. **Ejecutar** → **Exportar** → *GeoJSON*, *CSV* o *GPX*
 
 ## Opción C — QGIS
 
-Complemento **QuickOSM**: pestaña *Consulta rápida*, llave `amenity` valor
-`restaurant`, extensión = lienzo del mapa centrado en el volcán. O bien
-*Consulta* y pegar los mismos `.overpassql`.
+Complemento **QuickOSM**: pestaña *Consulta* y pegar los mismos `.overpassql`,
+con la extensión centrada en el volcán.
 
 ## Notas importantes
 
-- **La cobertura depende de lo que la comunidad haya mapeado.** En El Salvador
-  los restaurantes están bastante completos en Santa Tecla y San Salvador;
-  inmobiliarias y agroservicios están sub-representados. Los resultados sin
-  nombre (`nombre` vacío) son lugares mapeados sin razón social.
-- Para un registro *oficial* de empresas conviene complementar con el
-  Directorio de Unidades Económicas (DIGESTYC/BCR) o el Registro de Comercio (CNR);
-  OSM no es un registro mercantil.
-- Datos © colaboradores de OpenStreetMap, licencia **ODbL**: si publicas o
-  redistribuyes, hay que dar atribución y compartir bajo la misma licencia.
+- **La cobertura depende de lo que la comunidad haya mapeado.** Los restaurantes
+  están bastante completos en Santa Tecla, Escalón y San Salvador; las colonias y
+  residenciales también salen bien porque se mapean como polígonos. En cambio las
+  **inmobiliarias como empresa están muy sub-mapeadas** (espera decenas, no
+  cientos), y en café saldrán sobre todo polígonos de cafetal, muchos sin razón
+  social.
+- Para un padrón *formal* de empresas complementa con el Directorio de Unidades
+  Económicas (BCR/DIGESTYC) o el Registro de Comercio del CNR; OSM no es un
+  registro mercantil.
+- Datos © colaboradores de OpenStreetMap, licencia **ODbL**: al publicar o
+  redistribuir hay que atribuir y compartir bajo la misma licencia.
   <https://www.openstreetmap.org/copyright>
 - Sé considerado con la API pública de Overpass: no lances la descarga en bucle.
