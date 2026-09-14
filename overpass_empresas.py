@@ -4,19 +4,16 @@
 Descarga nombres y ubicaciones de empresas desde OpenStreetMap (API Overpass)
 para la zona del volcan de San Salvador (Quezaltepeque), El Salvador.
 
-Categorias que se descargan por defecto:
-  - restaurantes  : restaurantes, comida rapida, bares, pupuserias, panaderias
-  - inmobiliarias : agentes y administradoras de bienes raices, constructoras
-  - residenciales : residenciales, colonias, urbanizaciones, condominios, apartamentos
-  - cafe          : cafetales, beneficios, tostadurias y cafeterias
-Extra (con --categorias): agricultura (agroservicios, fincas, viveros)
+Categorias: restaurantes, cafeterias, alimentos_bebidas, salones_eventos,
+constructoras, fincas_cafe, beneficios_cafe, tostadurias_cafe y
+parques_diversiones. Todas se descargan por defecto.
 
 Salidas en la carpeta indicada con --salida:
   empresas_<categoria>.csv, empresas_todas.csv y empresas.geojson
 
 Ejemplos:
   python3 overpass_empresas.py
-  python3 overpass_empresas.py --radio 20000 --categorias restaurantes agricultura
+  python3 overpass_empresas.py --radio 20000 --categorias restaurantes cafeterias
   python3 overpass_empresas.py --bbox 13.60 -89.45 13.90 -89.15
   python3 overpass_empresas.py --guardar-json crudo   # deja el JSON original
 """
@@ -45,51 +42,63 @@ ENDPOINTS = [
 ]
 
 CATEGORIAS = {
-    # 1) Restaurantes y comida preparada
     "restaurantes": [
-        'nwr["amenity"~"^(restaurant|fast_food|bar|pub|ice_cream|food_court|biergarten)$"]',
-        'nwr["shop"~"^(bakery|pastry|deli)$"]',
+        'nwr["amenity"~"^(restaurant|fast_food|food_court|bbq)$"]',
         'nwr["cuisine"~"pupusa|salvadoran",i]',
+        'nwr["name"~"restaurante|pupuser|comedor |marisquer|antojitos",i][!"highway"]',
     ],
-    # 2a) Inversiones inmobiliarias: las empresas
-    "inmobiliarias": [
-        'nwr["office"~"^(estate_agent|property_management|developer|construction_company)$"]',
-        'nwr["shop"="estate_agent"]',
-        'nwr["craft"="builder"]',
-        'nwr["office"="architect"]',
-        'nwr["name"~"inmobiliari|bienes ra|constructora|urbanizadora|desarrollos",i][!"highway"][!"landuse"][!"place"]',
-    ],
-    # 2b) Inversiones inmobiliarias: el producto (residenciales, colonias, apartamentos)
-    "residenciales": [
-        'nwr["landuse"="residential"]["name"]',
-        'nwr["place"~"^(neighbourhood|suburb|quarter|city_block)$"]["name"]',
-        'nwr["building"~"^(apartments|residential)$"]["name"]',
-        'nwr["residential"~"^(apartments|urban|gated)$"]["name"]',
-        'nwr["name"~"residencial|condominio|apartament|urbanizaci|lotificaci|reparto |colonia ",i][!"highway"]',
-    ],
-    # 3) Cafe: cafetales, beneficios, tostadurias y cafeterias
-    "cafe": [
+    "cafeterias": [
         'nwr["amenity"="cafe"]',
         'nwr["shop"="coffee"]',
-        'nwr["craft"="coffee_roastery"]',
         'nwr["cuisine"~"coffee",i]',
+        'nwr["name"~"cafeter|coffee",i][!"highway"]',
+    ],
+    "alimentos_bebidas": [
+        'nwr["shop"~"^(bakery|pastry|butcher|deli|confectionery|greengrocer|seafood|dairy|alcohol|beverages|supermarket|wholesale|convenience|frozen_food|health_food|spices|tea|water)$"]',
+        'nwr["craft"~"^(bakery|brewery|distillery|winery|confectionery|caterer|dairy|butcher)$"]',
+        'nwr["amenity"~"^(bar|pub|biergarten|ice_cream)$"]',
+        'nwr["industrial"~"^(food|brewery|slaughterhouse)$"]',
+        'nwr["man_made"="works"]["product"~"food|drink|beverage|milk|dairy|meat|bread|sugar|beer|water",i]',
+        'nwr["name"~"alimentos|bebidas|embotellador|cervecer|l[áa]cteos|panificadora|agroindustri|molinos? de|distribuidora de alimentos",i][!"highway"]',
+    ],
+    "salones_eventos": [
+        'nwr["amenity"~"^(events_venue|conference_centre|exhibition_centre)$"]',
+        'nwr["name"~"eventos|banquete|recepciones|convenciones|sal[oó]n social",i][!"highway"]',
+    ],
+    "constructoras": [
+        'nwr["office"~"^(construction_company|developer)$"]',
+        'nwr["craft"~"^(builder|carpenter|electrician|plumber)$"]',
+        'nwr["office"="architect"]',
+        'nwr["industrial"~"^(construction|cement|concrete)$"]',
+        'nwr["name"~"constructora|construcciones|urbanizadora|ingenier[ií]a|desarrollos|prefabricad",i][!"highway"][!"landuse"][!"place"]',
+    ],
+    "fincas_cafe": [
         'nwr["crop"~"coffee|caf",i]',
         'nwr["produce"~"coffee|caf",i]',
-        'nwr["product"~"coffee|caf",i]',
         'nwr["trees"~"coffee",i]',
-        'nwr["name"~"caf[e\u00e9]|cafetal|beneficio|tostadur|finca ",i][!"highway"]',
-    ],
-    # Extra (no se descarga por defecto): resto del agro
-    "agricultura": [
-        'nwr["shop"~"^(agrarian|farm|garden_centre)$"]',
-        'nwr["craft"~"^(agricultural_engines|distillery|winery)$"]',
-        'nwr["landuse"~"^(farmland|orchard|vineyard|greenhouse_horticulture|plant_nursery)$"]["name"]',
+        'nwr["landuse"~"^(farmland|orchard)$"]["name"~"caf[eé]|cafetal|finca|hacienda",i]',
         'nwr["place"="farm"]',
-        'nwr["man_made"="works"]["name"]',
+        'nwr["name"~"cafetal|finca |hacienda ",i][!"highway"]',
+    ],
+    "beneficios_cafe": [
+        'nwr["man_made"="works"]["product"~"coffee|caf",i]',
+        'nwr["product"~"coffee|caf",i]["name"]',
+        'nwr["name"~"beneficio|despulpad|trillo de caf",i][!"highway"]',
+    ],
+    "tostadurias_cafe": [
+        'nwr["craft"="coffee_roastery"]',
+        'nwr["shop"="coffee"]["name"~"tosta|torrefac",i]',
+        'nwr["name"~"tostadur|tostado de caf|torrefac",i][!"highway"]',
+    ],
+    "parques_diversiones": [
+        'nwr["tourism"="theme_park"]',
+        'nwr["leisure"~"^(water_park|amusement_arcade)$"]',
+        'nwr["attraction"]',
+        'nwr["name"~"turicentro|parque acu|parque de divers|diversiones|mundo feliz",i][!"highway"]',
     ],
 }
 
-POR_DEFECTO = ["restaurantes", "inmobiliarias", "residenciales", "cafe"]
+POR_DEFECTO = ['restaurantes', 'cafeterias', 'alimentos_bebidas', 'salones_eventos', 'constructoras', 'fincas_cafe', 'beneficios_cafe', 'tostadurias_cafe', 'parques_diversiones']
 
 # Orden de prioridad para deducir la subcategoria de cada elemento
 LLAVES_TIPO = ["amenity", "shop", "office", "craft", "landuse", "residential", "place",

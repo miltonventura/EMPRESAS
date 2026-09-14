@@ -58,9 +58,6 @@ python3 overpass_empresas.py --radio 25000
 # Solo una categoría
 python3 overpass_empresas.py --categorias cafe
 
-# Sumar el resto del agro
-python3 overpass_empresas.py --categorias restaurantes inmobiliarias residenciales cafe agricultura
-
 # Rectángulo en vez de círculo: sur oeste norte este
 python3 overpass_empresas.py --bbox 13.60 -89.45 13.90 -89.15
 
@@ -80,8 +77,8 @@ El script reintenta con espera creciente y rota entre tres servidores Overpass
 ## Opción B — sin programar, en el navegador
 
 1. Abrir <https://overpass-turbo.eu>
-2. Pegar el contenido de `consultas/restaurantes.overpassql`
-   (o `inmobiliarias`, `residenciales`, `cafe`, `agricultura`)
+2. Pegar el contenido de `consultas/restaurantes.overpassql` (hay uno por
+   categoría, ya delimitados a los 28 distritos)
 3. **Ejecutar** → **Exportar** → *GeoJSON*, *CSV* o *GPX*
 
 ## Opción C — QGIS
@@ -91,12 +88,12 @@ con la extensión centrada en el volcán.
 
 ## Notas importantes
 
-- **La cobertura depende de lo que la comunidad haya mapeado.** Los restaurantes
-  están bastante completos en Santa Tecla, Escalón y San Salvador; las colonias y
-  residenciales también salen bien porque se mapean como polígonos. En cambio las
-  **inmobiliarias como empresa están muy sub-mapeadas** (espera decenas, no
-  cientos), y en café saldrán sobre todo polígonos de cafetal, muchos sin razón
-  social.
+- **La cobertura depende de lo que la comunidad haya mapeado.** Restaurantes,
+  cafeterías y comercios de alimentos salen bastante completos en San Salvador,
+  Antiguo Cuscatlán y Santa Tecla. Constructoras, salones de eventos, beneficios y
+  tostadurías están muy sub-mapeados: espera pocos resultados, y buena parte
+  vendrá de la búsqueda por nombre (`subcategoria` = `sin_clasificar`). Los
+  cafetales aparecen como polígonos grandes, muchos sin razón social.
 - Para un padrón *formal* de empresas complementa con el Directorio de Unidades
   Económicas (BCR/DIGESTYC) o el Registro de Comercio del CNR; OSM no es un
   registro mercantil.
