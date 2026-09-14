@@ -101,3 +101,10 @@ con la extensión centrada en el volcán.
   redistribuir hay que atribuir y compartir bajo la misma licencia.
   <https://www.openstreetmap.org/copyright>
 - Sé considerado con la API pública de Overpass: no lances la descarga en bucle.
+
+## Script de un solo archivo
+
+`descargar.py` es la versión copia-y-pega: sin argumentos ni opciones, se corre con
+`python3 descargar.py` y descarga las cuatro categorías a la carpeta `datos/`.
+Para cambiar la zona se editan `LAT`, `LON` y `RADIO` en las primeras líneas.
+`overpass_empresas.py` es la versión con opciones de línea de comandos.
