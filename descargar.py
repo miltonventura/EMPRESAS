@@ -4,6 +4,10 @@
 Descarga empresas desde OpenStreetMap para 28 distritos de El Salvador
 (AMSS y la franja costera de La Libertad).
 
+Categorias: restaurantes, cafeterias, alimentos y bebidas, salones de eventos,
+constructoras, fincas de cafe, beneficios de cafe, tostadurias y parques de
+diversiones.
+
 Uso:   pip install requests
        python3 descargar.py
 
@@ -65,33 +69,68 @@ SERVIDORES = [
 ]
 
 CATEGORIAS = {
+    # Comida servida en mesa
     "restaurantes": [
-        'nwr["amenity"~"^(restaurant|fast_food|bar|pub|ice_cream|food_court)$"]',
-        'nwr["shop"~"^(bakery|pastry|deli)$"]',
+        'nwr["amenity"~"^(restaurant|fast_food|food_court|bbq)$"]',
         'nwr["cuisine"~"pupusa|salvadoran",i]',
+        'nwr["name"~"restaurante|pupuser|comedor |marisquer|antojitos",i][!"highway"]',
     ],
-    "inmobiliarias": [
-        'nwr["office"~"^(estate_agent|property_management|developer|construction_company)$"]',
-        'nwr["shop"="estate_agent"]',
-        'nwr["craft"="builder"]',
-        'nwr["office"="architect"]',
-        'nwr["name"~"inmobiliari|bienes ra|constructora|urbanizadora|desarrollos",i][!"highway"][!"landuse"][!"place"]',
-    ],
-    "residenciales": [
-        'nwr["landuse"="residential"]["name"]',
-        'nwr["place"~"^(neighbourhood|suburb|quarter|city_block)$"]["name"]',
-        'nwr["building"~"^(apartments|residential)$"]["name"]',
-        'nwr["name"~"residencial|condominio|apartament|urbanizaci|lotificaci|reparto |colonia ",i][!"highway"]',
-    ],
-    "cafe": [
+    # Cafeterias y tiendas de cafe
+    "cafeterias": [
         'nwr["amenity"="cafe"]',
         'nwr["shop"="coffee"]',
-        'nwr["craft"="coffee_roastery"]',
+        'nwr["cuisine"~"coffee",i]',
+        'nwr["name"~"cafeter|coffee",i][!"highway"]',
+    ],
+    # Produccion, distribucion y venta de alimentos y bebidas
+    "alimentos_bebidas": [
+        'nwr["shop"~"^(bakery|pastry|butcher|deli|confectionery|greengrocer|seafood|dairy|alcohol|beverages|supermarket|wholesale|convenience|frozen_food|health_food|spices|tea|water)$"]',
+        'nwr["craft"~"^(bakery|brewery|distillery|winery|confectionery|caterer|dairy|butcher)$"]',
+        'nwr["amenity"~"^(bar|pub|biergarten|ice_cream)$"]',
+        'nwr["industrial"~"^(food|brewery|slaughterhouse)$"]',
+        'nwr["man_made"="works"]["product"~"food|drink|beverage|milk|dairy|meat|bread|sugar|beer|water",i]',
+        'nwr["name"~"alimentos|bebidas|embotellador|cervecer|l[áa]cteos|panificadora|agroindustri|molinos? de|distribuidora de alimentos",i][!"highway"]',
+    ],
+    # Salones para eventos, banquetes y convenciones
+    "salones_eventos": [
+        'nwr["amenity"~"^(events_venue|conference_centre|exhibition_centre)$"]',
+        'nwr["name"~"eventos|banquete|recepciones|convenciones|sal[oó]n social",i][!"highway"]',
+    ],
+    # Empresas constructoras
+    "constructoras": [
+        'nwr["office"~"^(construction_company|developer)$"]',
+        'nwr["craft"~"^(builder|carpenter|electrician|plumber)$"]',
+        'nwr["office"="architect"]',
+        'nwr["industrial"~"^(construction|cement|concrete)$"]',
+        'nwr["name"~"constructora|construcciones|urbanizadora|ingenier[ií]a|desarrollos|prefabricad",i][!"highway"][!"landuse"][!"place"]',
+    ],
+    # Fincas y cafetales
+    "fincas_cafe": [
         'nwr["crop"~"coffee|caf",i]',
         'nwr["produce"~"coffee|caf",i]',
-        'nwr["product"~"coffee|caf",i]',
         'nwr["trees"~"coffee",i]',
-        'nwr["name"~"caf[eé]|cafetal|beneficio|tostadur|finca ",i][!"highway"]',
+        'nwr["landuse"~"^(farmland|orchard)$"]["name"~"caf[eé]|cafetal|finca|hacienda",i]',
+        'nwr["place"="farm"]',
+        'nwr["name"~"cafetal|finca |hacienda ",i][!"highway"]',
+    ],
+    # Beneficios (procesamiento del cafe)
+    "beneficios_cafe": [
+        'nwr["man_made"="works"]["product"~"coffee|caf",i]',
+        'nwr["product"~"coffee|caf",i]["name"]',
+        'nwr["name"~"beneficio|despulpad|trillo de caf",i][!"highway"]',
+    ],
+    # Tostadurias y torrefactoras
+    "tostadurias_cafe": [
+        'nwr["craft"="coffee_roastery"]',
+        'nwr["shop"="coffee"]["name"~"tosta|torrefac",i]',
+        'nwr["name"~"tostadur|tostado de caf|torrefac",i][!"highway"]',
+    ],
+    # Parques de diversiones, acuaticos y turicentros
+    "parques_diversiones": [
+        'nwr["tourism"="theme_park"]',
+        'nwr["leisure"~"^(water_park|amusement_arcade)$"]',
+        'nwr["attraction"]',
+        'nwr["name"~"turicentro|parque acu|parque de divers|diversiones|mundo feliz",i][!"highway"]',
     ],
 }
 
@@ -100,8 +139,9 @@ COLUMNAS = ["categoria", "subcategoria", "nombre", "distrito", "operador",
             "sitio_web", "horario", "producto_o_cocina",
             "osm_tipo", "osm_id", "url_osm"]
 
-LLAVES_TIPO = ["amenity", "shop", "office", "craft", "landuse", "place",
-               "building", "man_made", "crop", "produce", "product"]
+LLAVES_TIPO = ["amenity", "shop", "office", "craft", "tourism", "leisure",
+               "landuse", "place", "industrial", "man_made", "attraction",
+               "building", "crop", "produce", "product"]
 
 # Rectangulo que contiene a El Salvador; acota la busqueda de los limites
 # administrativos para que no aparezcan homonimos de otros paises.

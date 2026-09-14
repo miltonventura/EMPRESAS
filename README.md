@@ -7,25 +7,28 @@ Zona por defecto: círculo de **15 km** alrededor del cráter El Boquerón
 (`13.7342, -89.2864`). Cubre Santa Tecla, Nejapa, Quezaltepeque, Colón,
 Antiguo Cuscatlán y el poniente de San Salvador.
 
-## Las tres categorías
+## Las nueve categorías
 
-| Categoría | Qué trae | Etiquetas OSM que consulta |
-|---|---|---|
-| **`restaurantes`** | Restaurantes, comida rápida, pupuserías, bares, panaderías | `amenity=restaurant/fast_food/bar/pub/ice_cream/food_court`, `shop=bakery/pastry/deli`, `cuisine=pupusa` |
-| **`inmobiliarias`** | Las **empresas**: corredores de bienes raíces, administradoras, constructoras, urbanizadoras | `office=estate_agent/property_management/developer/construction_company`, `shop=estate_agent`, `craft=builder`, `office=architect`, y nombres con *inmobiliaria / bienes raíces / constructora / urbanizadora* |
-| **`residenciales`** | El **producto**: residenciales, colonias, urbanizaciones, lotificaciones, condominios y apartamentos | `landuse=residential` con nombre, `place=neighbourhood/suburb/quarter/city_block`, `building=apartments/residential`, y nombres con *residencial / colonia / condominio / apartamentos / urbanización / lotificación / reparto* |
-| **`cafe`** | Toda la cadena: cafetales y fincas, beneficios, tostadurías y cafeterías | `crop=coffee`, `produce/product=coffee`, `trees=coffee_plants`, `amenity=cafe`, `shop=coffee`, `craft=coffee_roastery`, y nombres con *café / cafetal / beneficio / tostaduría / finca* |
+| Categoría | Qué recoge |
+|---|---|
+| `restaurantes` | Restaurantes, comida rápida, pupuserías, comedores, marisquerías |
+| `cafeterias` | Cafeterías y tiendas de café |
+| `alimentos_bebidas` | Producción, distribución y venta: panaderías, carnicerías, lácteos, embotelladoras, cervecerías, supermercados, mayoristas, bares |
+| `salones_eventos` | Salones de eventos, banquetes, recepciones y centros de convenciones |
+| `constructoras` | Constructoras, urbanizadoras, ingenierías, oficinas de arquitectura, prefabricados |
+| `fincas_cafe` | Cafetales y fincas: `crop=coffee`, `produce=coffee`, y fincas y haciendas con nombre |
+| `beneficios_cafe` | Beneficios y despulpadoras de café |
+| `tostadurias_cafe` | Tostadurías y torrefactoras |
+| `parques_diversiones` | Parques temáticos, acuáticos, turicentros y salas de juegos |
 
-Las cuatro se descargan por defecto: `inmobiliarias` y `residenciales` son las dos
-mitades de *inversiones inmobiliarias* y se separan en archivos distintos para que
-puedas filtrar empresa vs. propiedad. Existe además `agricultura` (agroservicios,
-viveros, resto de fincas), que **no** se baja por defecto.
+Cada categoría busca **por etiqueta formal de OSM y también por nombre**, porque en
+El Salvador mucho está mapeado sin la etiqueta correcta. Los hallazgos que salieron
+solo por el nombre se marcan como `sin_clasificar` en la columna `subcategoria`;
+revísalos, ahí es donde se cuela el ruido.
 
-Además de las etiquetas formales, las tres categorías buscan **por nombre**
-(p. ej. cualquier elemento llamado «Residencial …» o «Beneficio …»), porque en
-El Salvador mucho está mapeado sin la etiqueta correcta. Eso trae algo de ruido:
-revisa la columna `subcategoria`, donde `sin_clasificar` marca justamente esos
-hallazgos por nombre.
+Un mismo lugar puede caer en dos categorías (una finca que además tiene beneficio).
+En los archivos por categoría aparece en las dos; en `empresas_todas.csv` sale una
+sola vez, con la columna `categoria` uniéndolas con `|`.
 
 ## Opción A — script (deja CSV + GeoJSON)
 
@@ -36,8 +39,8 @@ python3 overpass_empresas.py
 
 Genera en `datos/`:
 
-- `empresas_restaurantes.csv`, `empresas_inmobiliarias.csv`,
-  `empresas_residenciales.csv`, `empresas_cafe.csv`
+- un CSV por categoría: `empresas_restaurantes.csv`, `empresas_cafeterias.csv`, etc.
+
 - `empresas_todas.csv` — todo junto, sin duplicados (si un lugar cae en dos
   categorías, la columna `categoria` las une con `|`)
 - `empresas.geojson` — para QGIS, Google My Maps, Kepler.gl o geojson.io
