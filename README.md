@@ -23,3 +23,18 @@ python osm_categorias.py --todas-las-claves --limite 500
 
 Fuentes: [Taginfo](https://taginfo.openstreetmap.org) (catálogo global) y
 [Overpass API](https://overpass-api.de) (conteos por área). Ninguna requiere clave.
+
+## osm_categorias_el_salvador.py — categorías de OSM en El Salvador
+
+Genera un CSV con todas las categorías (clave=valor) que OpenStreetMap tiene
+registradas dentro de El Salvador, con cantidad de elementos, ejemplos de nombres,
+descripción en español y enlace al wiki.
+
+```bash
+python osm_categorias_el_salvador.py                 # todo el país, todas las claves
+python osm_categorias_el_salvador.py --sin-edificios # omite building=* (más rápido)
+python osm_categorias_el_salvador.py --claves shop office amenity leisure
+```
+
+Salida: `categorias_el_salvador.csv` (detalle), `categorias_el_salvador_resumen.csv`
+(totales por grupo) y `categorias_el_salvador.json`.
