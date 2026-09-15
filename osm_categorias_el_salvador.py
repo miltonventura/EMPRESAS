@@ -36,8 +36,10 @@ Uso
 
 import argparse
 import csv
+import http.client
 import json
 import os
+import ssl
 import sys
 import time
 import urllib.error
@@ -46,11 +48,23 @@ import urllib.request
 from collections import Counter, defaultdict
 
 TAGINFO_URL = os.environ.get("OSM_TAGINFO_URL", "https://taginfo.openstreetmap.org/api/4")
-OVERPASS_URL = os.environ.get("OSM_OVERPASS_URL", "https://overpass-api.de/api/interpreter")
+# Espejos públicos de Overpass. Si uno responde 504/429 (saturado) se prueba el siguiente.
+# Con la variable de entorno OSM_OVERPASS_URL se fuerza un único servidor.
+OVERPASS_ESPEJOS = [
+    "https://overpass-api.de/api/interpreter",
+    "https://overpass.kumi.systems/api/interpreter",
+    "https://overpass.private.coffee/api/interpreter",
+    "https://maps.mail.ru/osm/tools/overpass/api/interpreter",
+]
+if os.environ.get("OSM_OVERPASS_URL"):
+    OVERPASS_ESPEJOS = [os.environ["OSM_OVERPASS_URL"]]
 USER_AGENT = "osm-categorias-el-salvador/1.0 (script educativo; python urllib)"
 
 PAIS_ISO_DEFECTO = "SV"          # El Salvador
 NOMBRES_PAIS = {"SV": "El Salvador"}
+# Rectángulo (sur, oeste, norte, este) que envuelve al país. Acota la consulta y la hace
+# mucho más rápida; el filtro por área se aplica después para excluir países vecinos.
+BBOX_PAIS = {"SV": "13.10,-90.20,14.50,-87.65"}
 
 # Claves de OSM que representan "categorías" de lugares, negocios y actividades.
 # Nombre del grupo en español + descripción.
@@ -104,18 +118,47 @@ CLAVES_PESADAS = {"building"}   # muchos elementos: se pueden omitir con --sin-e
 # --------------------------------------------------------------------------- #
 # HTTP
 # --------------------------------------------------------------------------- #
+_CONTEXTO_SSL = None   # se rellena con un contexto sin verificación solo si el usuario lo pide
+
+
 def _get_json(url, data=None, timeout=300, reintentos=3):
+    """Petición HTTP (GET, o POST si data != None) que devuelve el JSON de respuesta."""
     ultimo_error = None
     for intento in range(1, reintentos + 1):
         try:
             req = urllib.request.Request(url, data=data, headers={"User-Agent": USER_AGENT})
-            with urllib.request.urlopen(req, timeout=timeout) as resp:
-                return json.loads(resp.read().decode("utf-8"))
-        except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError, ValueError) as exc:
-            ultimo_error = exc
+            with urllib.request.urlopen(req, timeout=timeout, context=_CONTEXTO_SSL) as resp:
+                cuerpo = resp.read().decode("utf-8", errors="replace")
+            return json.loads(cuerpo)
+        except urllib.error.HTTPError as exc:
+            detalle = ""
+            try:
+                detalle = exc.read().decode("utf-8", errors="replace")[:300].strip()
+            except Exception:
+                pass
+            ultimo_error = f"HTTP {exc.code} {exc.reason}. {detalle}"
+            if exc.code == 429:
+                ultimo_error += " (demasiadas peticiones: el servidor pide esperar)"
+                espera = 30 * intento
+            elif exc.code in (502, 503, 504):
+                ultimo_error += " (servidor saturado o consulta demasiado lenta)"
+                espera = 15 * intento
+            elif exc.code == 400:
+                ultimo_error += " (consulta rechazada; revisa la sintaxis o el tamaño)"
+                espera = 5
+            else:
+                espera = 5 * intento
+        except (urllib.error.URLError, http.client.HTTPException, OSError, ValueError) as exc:
+            ultimo_error = str(exc)
+            if "CERTIFICATE_VERIFY_FAILED" in ultimo_error:
+                ultimo_error += ("\n   -> Tu Python no encuentra los certificados raíz. En macOS ejecuta "
+                                 "'Install Certificates.command' de la carpeta de Python, o vuelve a correr "
+                                 "el script con --sin-verificar-ssl.")
+                raise RuntimeError(f"No se pudo consultar {url}: {ultimo_error}")
             espera = 5 * intento
-            print(f"   [aviso] intento {intento}/{reintentos} falló ({exc}); reintento en {espera}s...",
-                  file=sys.stderr)
+        print(f"   [aviso] intento {intento}/{reintentos} falló: {ultimo_error}", file=sys.stderr)
+        if intento < reintentos:
+            print(f"   [aviso] reintentando en {espera}s...", file=sys.stderr)
             time.sleep(espera)
     raise RuntimeError(f"No se pudo consultar {url}: {ultimo_error}")
 
@@ -123,21 +166,43 @@ def _get_json(url, data=None, timeout=300, reintentos=3):
 # --------------------------------------------------------------------------- #
 # Overpass: elementos del país por clave
 # --------------------------------------------------------------------------- #
-def overpass_elementos_pais(clave, pais_iso):
+def overpass_elementos_pais(clave, pais_iso, rondas=4):
     """
     Descarga (solo etiquetas, sin geometría) todos los nodos, vías y relaciones
     del país que tienen la clave indicada.
+
+    Prueba cada espejo de Overpass; si todos fallan (normalmente por saturación,
+    HTTP 504/429) espera y vuelve a intentar hasta 'rondas' veces.
     """
+    bbox = BBOX_PAIS.get(pais_iso)
+    filtro_bbox = f"({bbox})" if bbox else ""
     consulta = f"""
-    [out:json][timeout:300][maxsize:1073741824];
+    [out:json][timeout:180];
     area["ISO3166-1"="{pais_iso}"]["admin_level"="2"]->.pais;
-    nwr(area.pais)["{clave}"];
+    nwr["{clave}"]{filtro_bbox}(area.pais);
     out tags;
     """
-    datos = _get_json(OVERPASS_URL,
-                      data=urllib.parse.urlencode({"data": consulta}).encode("utf-8"),
-                      timeout=360)
-    return datos.get("elements", [])
+    cuerpo = urllib.parse.urlencode({"data": consulta}).encode("utf-8")
+    ultimo_error = None
+    for ronda in range(1, rondas + 1):
+        for url in OVERPASS_ESPEJOS:
+            try:
+                datos = _get_json(url, data=cuerpo, timeout=240, reintentos=1)
+                if "elements" not in datos:
+                    raise RuntimeError(f"respuesta inesperada de {url}: {str(datos)[:200]}")
+                if url != OVERPASS_ESPEJOS[0]:
+                    print(f"   (respondió el espejo {url.split('/')[2]})")
+                return datos["elements"]
+            except RuntimeError as exc:
+                ultimo_error = exc
+                print(f"   [aviso] {url.split('/')[2]} no respondió; probando otro espejo...",
+                      file=sys.stderr)
+        if ronda < rondas:
+            espera = 45 * ronda
+            print(f"   [aviso] todos los servidores están saturados; esperando {espera}s "
+                  f"(ronda {ronda}/{rondas})...", file=sys.stderr)
+            time.sleep(espera)
+    raise RuntimeError(f"Overpass no respondió tras {rondas} rondas. Último error: {ultimo_error}")
 
 
 def resumir_por_valor(clave, elementos, max_ejemplos=5):
@@ -234,13 +299,19 @@ def parsear_argumentos():
                    help="Idioma preferido de las descripciones (por defecto es; respaldo en).")
     p.add_argument("--max-respaldo-wiki", type=int, default=150,
                    help="Máximo de consultas individuales al wiki para valores sin descripción.")
+    p.add_argument("--sin-verificar-ssl", action="store_true",
+                   help="Desactiva la verificación de certificados (solo si falla con CERTIFICATE_VERIFY_FAILED).")
     p.add_argument("--pausa", type=float, default=2.0,
                    help="Segundos de pausa entre consultas a Overpass (cortesía con el servidor).")
     return p.parse_args()
 
 
 def main():
+    global _CONTEXTO_SSL
     args = parsear_argumentos()
+    if args.sin_verificar_ssl:
+        _CONTEXTO_SSL = ssl._create_unverified_context()
+        print("[aviso] Verificación SSL desactivada por petición del usuario.", file=sys.stderr)
     pais = args.pais.upper()
     nombre_pais = NOMBRES_PAIS.get(pais, pais)
     claves = args.claves or list(GRUPOS)
@@ -253,6 +324,7 @@ def main():
     salida_json = f"{base}.json"
 
     print(f"País: {nombre_pais} ({pais})")
+    print(f"Servidores Overpass: {', '.join(u.split('/')[2] for u in OVERPASS_ESPEJOS)}")
     print(f"Claves a analizar: {', '.join(claves)}\n")
 
     filas_detalle = []
@@ -342,6 +414,15 @@ def main():
 
 
 if __name__ == "__main__":
+    if sys.version_info < (3, 8):
+        sys.exit("Este script necesita Python 3.8 o superior. Versión actual: " + sys.version.split()[0])
+    # Evita errores de codificación en consolas de Windows con acentos y eñes
+    for flujo in (sys.stdout, sys.stderr):
+        if hasattr(flujo, "reconfigure"):
+            try:
+                flujo.reconfigure(encoding="utf-8", errors="replace")
+            except Exception:
+                pass
     try:
         main()
     except KeyboardInterrupt:
