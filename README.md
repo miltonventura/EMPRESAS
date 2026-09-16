@@ -37,4 +37,6 @@ python osm_categorias_el_salvador.py --claves shop office amenity leisure
 ```
 
 Salida: `categorias_el_salvador.csv` (detalle), `categorias_el_salvador_resumen.csv`
-(totales por grupo) y `categorias_el_salvador.json`.
+(totales por grupo), `lugares_el_salvador.csv` (cada lugar con nombre, dirección,
+contacto y coordenadas) y `categorias_el_salvador.json`. Con `--guardar-crudo` se
+conservan además las respuestas JSON originales de Overpass en `osm_crudo/`.

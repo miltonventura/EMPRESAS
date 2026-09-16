@@ -19,9 +19,13 @@ centro comercial, leisure=park es un parque, office=company es una empresa).
      nombre y se guardan algunos nombres de ejemplo.
   3. Con Taginfo se agrega la descripción oficial (en español, y en inglés si no
      hay traducción), el uso global y el enlace al wiki de OSM.
-  4. Se escriben dos CSV:
+  4. Se escriben los resultados (se guardan progresivamente, clave por clave):
         categorias_el_salvador.csv          -> detalle de cada categoría (clave=valor)
         categorias_el_salvador_resumen.csv  -> totales por clave (grupo de categorías)
+        lugares_el_salvador.csv             -> producto directo de la consulta: cada lugar
+                                               con nombre, dirección, contacto y coordenadas
+        categorias_el_salvador.json         -> categorías y resumen en JSON
+        osm_crudo/SV_<clave>.json           -> (con --guardar-crudo) respuesta original de Overpass
 
 Requisitos: Python 3.8+ (solo librería estándar, no hay que instalar nada).
 
@@ -180,7 +184,7 @@ def overpass_elementos_pais(clave, pais_iso, rondas=4):
     [out:json][timeout:180];
     area["ISO3166-1"="{pais_iso}"]["admin_level"="2"]->.pais;
     nwr["{clave}"]{filtro_bbox}(area.pais);
-    out tags;
+    out tags center;
     """
     cuerpo = urllib.parse.urlencode({"data": consulta}).encode("utf-8")
     ultimo_error = None
@@ -228,6 +232,57 @@ def resumir_por_valor(clave, elementos, max_ejemplos=5):
                 if len(s["ejemplos"]) < max_ejemplos and nombre not in s["ejemplos"]:
                     s["ejemplos"].append(nombre)
     return stats
+
+
+COLUMNAS_LUGARES = ["grupo", "clave", "valor", "etiqueta", "nombre", "marca", "tipo_osm", "id_osm",
+                    "direccion", "ciudad", "departamento", "telefono", "sitio_web", "correo",
+                    "horario", "latitud", "longitud", "enlace_osm", "otras_etiquetas"]
+
+
+def filas_lugares(clave, grupo, elementos):
+    """
+    Convierte los elementos devueltos por Overpass en filas de lugares: una por
+    elemento (nombre, dirección, contacto, coordenadas). Es el producto directo
+    de la consulta a OSM.
+    """
+    filas = []
+    for el in elementos:
+        tags = el.get("tags", {})
+        valor = tags.get(clave, "")
+        if not valor:
+            continue
+        centro = el.get("center") or {}
+        lat = el.get("lat", centro.get("lat", ""))
+        lon = el.get("lon", centro.get("lon", ""))
+        direccion = " ".join(x for x in (tags.get("addr:street", ""), tags.get("addr:housenumber", "")) if x)
+        if tags.get("addr:full"):
+            direccion = tags["addr:full"]
+        usadas = {clave, "name", "name:es", "brand", "addr:street", "addr:housenumber", "addr:full",
+                  "addr:city", "addr:state", "phone", "contact:phone", "website", "contact:website",
+                  "email", "contact:email", "opening_hours"}
+        otras = "; ".join(f"{k}={v}" for k, v in sorted(tags.items()) if k not in usadas)
+        filas.append({
+            "grupo": grupo,
+            "clave": clave,
+            "valor": valor,
+            "etiqueta": f"{clave}={valor}",
+            "nombre": tags.get("name") or tags.get("name:es") or "",
+            "marca": tags.get("brand", ""),
+            "tipo_osm": el.get("type", ""),
+            "id_osm": el.get("id", ""),
+            "direccion": direccion,
+            "ciudad": tags.get("addr:city", ""),
+            "departamento": tags.get("addr:state", ""),
+            "telefono": tags.get("phone") or tags.get("contact:phone") or "",
+            "sitio_web": tags.get("website") or tags.get("contact:website") or "",
+            "correo": tags.get("email") or tags.get("contact:email") or "",
+            "horario": tags.get("opening_hours", ""),
+            "latitud": lat,
+            "longitud": lon,
+            "enlace_osm": f"https://www.openstreetmap.org/{el.get('type')}/{el.get('id')}",
+            "otras_etiquetas": otras,
+        })
+    return filas
 
 
 # --------------------------------------------------------------------------- #
@@ -299,6 +354,11 @@ def parsear_argumentos():
                    help="Idioma preferido de las descripciones (por defecto es; respaldo en).")
     p.add_argument("--max-respaldo-wiki", type=int, default=150,
                    help="Máximo de consultas individuales al wiki para valores sin descripción.")
+    p.add_argument("--guardar-crudo", action="store_true",
+                   help="Guardar además la respuesta JSON original de Overpass de cada clave "
+                        "en la carpeta osm_crudo/.")
+    p.add_argument("--sin-lugares", action="store_true",
+                   help="No generar el CSV de lugares (solo el de categorías).")
     p.add_argument("--sin-verificar-ssl", action="store_true",
                    help="Desactiva la verificación de certificados (solo si falla con CERTIFICATE_VERIFY_FAILED).")
     p.add_argument("--pausa", type=float, default=2.0,
@@ -319,9 +379,13 @@ def main():
         claves = [c for c in claves if c not in CLAVES_PESADAS]
 
     base, _ = os.path.splitext(args.salida)
-    salida_detalle = args.salida
-    salida_resumen = f"{base}_resumen.csv"
-    salida_json = f"{base}.json"
+    salida_detalle = os.path.abspath(args.salida)
+    salida_resumen = os.path.abspath(f"{base}_resumen.csv")
+    salida_json = os.path.abspath(f"{base}.json")
+    salida_lugares = os.path.abspath(f"{base.replace('categorias', 'lugares') if 'categorias' in base else base + '_lugares'}.csv")
+    carpeta_crudo = os.path.abspath("osm_crudo")
+    if args.guardar_crudo:
+        os.makedirs(carpeta_crudo, exist_ok=True)
 
     print(f"País: {nombre_pais} ({pais})")
     print(f"Servidores Overpass: {', '.join(u.split('/')[2] for u in OVERPASS_ESPEJOS)}")
@@ -329,8 +393,35 @@ def main():
 
     filas_detalle = []
     filas_resumen = []
+    total_lugares = 0
     consultas_wiki_restantes = args.max_respaldo_wiki
     inicio = time.time()
+
+    columnas = ["grupo", "descripcion_grupo", "clave", "valor", "etiqueta", "cantidad_en_pais",
+                "nodos", "vias", "relaciones", "con_nombre", "ejemplos_nombres", "descripcion",
+                "uso_global_osm", "documentado_en_wiki", "enlace_wiki"]
+    columnas_resumen = ["clave", "grupo", "descripcion_grupo", "total_elementos",
+                        "valores_distintos", "elementos_con_nombre"]
+
+    def escribir_archivos():
+        """Escribe (o reescribe) los CSV y el JSON con lo acumulado hasta ahora."""
+        # utf-8-sig para que Excel reconozca acentos y ñ
+        with open(salida_detalle, "w", encoding="utf-8-sig", newline="") as f:
+            w = csv.DictWriter(f, fieldnames=columnas)
+            w.writeheader()
+            w.writerows(filas_detalle)
+        with open(salida_resumen, "w", encoding="utf-8-sig", newline="") as f:
+            w = csv.DictWriter(f, fieldnames=columnas_resumen)
+            w.writeheader()
+            w.writerows(filas_resumen)
+        with open(salida_json, "w", encoding="utf-8") as f:
+            json.dump({"pais": nombre_pais, "iso": pais, "fecha": time.strftime("%Y-%m-%d %H:%M:%S"),
+                       "resumen": filas_resumen, "detalle": filas_detalle}, f, ensure_ascii=False, indent=2)
+
+    if not args.sin_lugares:
+        # El CSV de lugares se va llenando clave por clave (puede ser grande)
+        with open(salida_lugares, "w", encoding="utf-8-sig", newline="") as f:
+            csv.DictWriter(f, fieldnames=COLUMNAS_LUGARES).writeheader()
 
     for i, clave in enumerate(claves, 1):
         grupo, desc_grupo = GRUPOS.get(clave, (clave, "(clave personalizada)"))
@@ -349,6 +440,19 @@ def main():
         total = sum(s["total"] for s in stats.values())
         con_nombre = sum(s["con_nombre"] for s in stats.values())
         print(f"   Overpass: {len(elementos):,} elementos, {len(stats)} valores distintos")
+
+        if args.guardar_crudo:
+            ruta_cruda = os.path.join(carpeta_crudo, f"{pais}_{clave}.json")
+            with open(ruta_cruda, "w", encoding="utf-8") as f:
+                json.dump(elementos, f, ensure_ascii=False)
+            print(f"   Respuesta original guardada en {ruta_cruda}")
+
+        if not args.sin_lugares:
+            lugares = filas_lugares(clave, grupo, elementos)
+            with open(salida_lugares, "a", encoding="utf-8-sig", newline="") as f:
+                csv.DictWriter(f, fieldnames=COLUMNAS_LUGARES).writerows(lugares)
+            total_lugares += len(lugares)
+            print(f"   {len(lugares):,} lugares agregados a {os.path.basename(salida_lugares)}")
 
         # 2) Taginfo: descripciones (idioma preferido y respaldo en inglés)
         info_es = taginfo_descripciones(clave, stats.keys(), args.idioma)
@@ -382,25 +486,10 @@ def main():
         filas_resumen.append({"clave": clave, "grupo": grupo, "descripcion_grupo": desc_grupo,
                               "total_elementos": total, "valores_distintos": len(stats),
                               "elementos_con_nombre": con_nombre})
+        escribir_archivos()   # guardado progresivo: si algo falla después, esto ya está en disco
         time.sleep(args.pausa)
 
-    # 3) Escritura de archivos
-    columnas = ["grupo", "descripcion_grupo", "clave", "valor", "etiqueta", "cantidad_en_pais",
-                "nodos", "vias", "relaciones", "con_nombre", "ejemplos_nombres", "descripcion",
-                "uso_global_osm", "documentado_en_wiki", "enlace_wiki"]
-    # utf-8-sig para que Excel reconozca acentos y ñ
-    with open(salida_detalle, "w", encoding="utf-8-sig", newline="") as f:
-        w = csv.DictWriter(f, fieldnames=columnas)
-        w.writeheader()
-        w.writerows(filas_detalle)
-    with open(salida_resumen, "w", encoding="utf-8-sig", newline="") as f:
-        w = csv.DictWriter(f, fieldnames=["clave", "grupo", "descripcion_grupo", "total_elementos",
-                                          "valores_distintos", "elementos_con_nombre"])
-        w.writeheader()
-        w.writerows(filas_resumen)
-    with open(salida_json, "w", encoding="utf-8") as f:
-        json.dump({"pais": nombre_pais, "iso": pais, "fecha": time.strftime("%Y-%m-%d %H:%M:%S"),
-                   "resumen": filas_resumen, "detalle": filas_detalle}, f, ensure_ascii=False, indent=2)
+    escribir_archivos()
 
     print("\n" + "=" * 80)
     print(f"Resumen para {nombre_pais}:")
@@ -409,8 +498,21 @@ def main():
               f"categorías: {str(r['valores_distintos']):>5}")
     print("=" * 80)
     print(f"Categorías (clave=valor) encontradas: {len(filas_detalle)}")
-    print(f"Archivos generados:\n  {salida_detalle}\n  {salida_resumen}\n  {salida_json}")
+    if not args.sin_lugares:
+        print(f"Lugares descargados: {total_lugares:,}")
+    print("Archivos generados:")
+    print(f"  {salida_detalle}   <- categorías encontradas en el país, con descripción")
+    print(f"  {salida_resumen}   <- totales por grupo")
+    if not args.sin_lugares:
+        print(f"  {salida_lugares}   <- todos los lugares (nombre, dirección, contacto, coordenadas)")
+    print(f"  {salida_json}   <- lo mismo que los dos primeros CSV, en JSON")
+    if args.guardar_crudo:
+        print(f"  {carpeta_crudo}{os.sep}   <- respuestas originales de Overpass")
     print(f"Tiempo total: {time.time() - inicio:.0f} s")
+    if not filas_detalle:
+        print("\nATENCIÓN: no se obtuvo ningún dato. Todas las consultas a Overpass fallaron; "
+              "los CSV quedaron vacíos. Revisa los mensajes [error Overpass] de arriba y "
+              "vuelve a intentarlo más tarde.")
 
 
 if __name__ == "__main__":
