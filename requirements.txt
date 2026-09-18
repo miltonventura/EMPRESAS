@@ -1,0 +1,3 @@
+# Dependencias de extraer_osm.py
+openpyxl>=3.1      # obligatorio: escritura de los archivos .xlsx
+shapely>=2.0       # opcional: acelera la asignacion de municipio/distrito
