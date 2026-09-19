@@ -33,7 +33,9 @@ import collections
 import csv
 import json
 import os
+import sys
 import time
+import traceback
 
 import requests
 
@@ -165,15 +167,46 @@ def descargar_frontera():
             return json.load(fh)
 
     print("Descargando la frontera de %s..." % DISTRITO)
-    consulta = (
-        '[out:json][timeout:%d];\n'
-        'rel(%s)["boundary"="administrative"]["admin_level"!="2"]["admin_level"!="4"]'
-        '["name"~"^(%s)$"];\nout geom;'
-    ) % (TIMEOUT_CONSULTA, BBOX_PAIS, PATRON)
-    datos = consultar(consulta, "frontera de %s" % DISTRITO)
-    with open(cache, "w", encoding="utf-8") as fh:
-        json.dump(datos, fh)
-    return datos
+
+    # Se prueba de lo mas estricto a lo mas amplio. Lo estricto evita traer
+    # cosas de mas; si no encuentra nada se afloja, porque el nombre puede
+    # estar con otro admin_level o escrito de otra forma en OpenStreetMap.
+    intentos = [
+        ("nombre exacto",
+         '["boundary"="administrative"]["admin_level"!="2"]["admin_level"!="4"]'
+         '["name"~"^(%s)$"]' % PATRON),
+        ("nombre exacto, sin descartar admin_level",
+         '["boundary"="administrative"]["name"~"^(%s)$"]' % PATRON),
+        ("nombre que contenga el patron",
+         '["boundary"="administrative"]["name"~"%s",i]' % PATRON),
+    ]
+    for etiqueta, filtro in intentos:
+        consulta = ("[out:json][timeout:%d];\nrel(%s)%s;\nout geom;"
+                    % (TIMEOUT_CONSULTA, BBOX_PAIS, filtro))
+        datos = consultar(consulta, "frontera de %s" % DISTRITO, obligatorio=False)
+        if datos is None:
+            print("   la busqueda por %s no obtuvo respuesta del servidor" % etiqueta)
+            continue
+        relaciones = [e for e in datos.get("elements", []) if e.get("type") == "relation"]
+        if relaciones:
+            print("   encontrada por %s: %d relacion(es)" % (etiqueta, len(relaciones)))
+            with open(cache, "w", encoding="utf-8") as fh:
+                json.dump(datos, fh)
+            return datos
+        print("   la busqueda por %s no devolvio ninguna relacion" % etiqueta)
+
+    raise SystemExit(
+        "No se encontro la frontera de %s en OpenStreetMap.\n"
+        "Corre  python3 revisar_frontera.py \"%s\"  para ver que devuelve el\n"
+        "servidor y con que nombre esta guardado el distrito." % (DISTRITO, PATRON))
+
+
+def nivel(relacion):
+    """admin_level de la relacion como numero; 0 si no lo trae o no es un numero."""
+    try:
+        return int(relacion.get("tags", {}).get("admin_level", 0))
+    except (TypeError, ValueError):
+        return 0
 
 
 def area_y_poligono(datos):
@@ -208,11 +241,21 @@ def area_y_poligono(datos):
             "No se encontro la frontera de %s dentro de El Salvador.\n"
             "Revisa el PATRON: asi como esta, no casa con ninguna relacion." % DISTRITO)
     if len(candidatas) > 1:
-        print("El patron '%s' casa con %d fronteras distintas:" % (PATRON, len(candidatas)))
+        # Varias fronteras con el mismo nombre: pasa cuando OpenStreetMap
+        # guarda a la vez el municipio y el distrito homonimo. Se toma la mas
+        # especifica (el admin_level mas alto) y se dice cual, en vez de
+        # detener la descarga.
+        print("El patron '%s' casa con %d fronteras dentro de El Salvador:"
+              % (PATRON, len(candidatas)))
         for relacion, lat, lon in candidatas:
-            print("   relacion %-12d %-30s centro %.4f, %.4f"
-                  % (relacion["id"], relacion.get("tags", {}).get("name", ""), lat, lon))
-        raise SystemExit("Afina el PATRON para que quede una sola y vuelve a correrlo.")
+            print("   relacion %-12d admin_level=%-4s %-26s centro %.4f, %.4f"
+                  % (relacion["id"], relacion.get("tags", {}).get("admin_level", "?"),
+                     relacion.get("tags", {}).get("name", ""), lat, lon))
+        candidatas.sort(key=lambda c: -nivel(c[0]))
+        print("   se usa la mas especifica: relacion %d (admin_level=%s)."
+              % (candidatas[0][0]["id"],
+                 candidatas[0][0].get("tags", {}).get("admin_level", "?")))
+        print("   si no es la correcta, afina el PATRON del encabezado.")
 
     relacion = candidatas[0][0]
     rejilla = collections.defaultdict(list)
@@ -355,5 +398,47 @@ def main():
     print("\nDatos (c) colaboradores de OpenStreetMap, licencia ODbL.")
 
 
+class Espejo(object):
+    """Escribe lo mismo en la consola y en el archivo de registro."""
+
+    def __init__(self, consola, archivo):
+        self.consola, self.archivo = consola, archivo
+
+    def write(self, texto):
+        self.consola.write(texto)
+        self.archivo.write(texto)
+
+    def flush(self):
+        self.consola.flush()
+        self.archivo.flush()
+
+
 if __name__ == "__main__":
-    main()
+    # Todo lo que se imprime queda tambien en un archivo, para poder revisar
+    # que paso aunque la ventana se cierre sola o el mensaje pase volando.
+    os.makedirs(CARPETA, exist_ok=True)
+    RUTA_REGISTRO = os.path.join(CARPETA, "registro_%s.txt" % BASE)
+    archivo_registro = open(RUTA_REGISTRO, "w", encoding="utf-8")
+    sys.stdout = Espejo(sys.__stdout__, archivo_registro)
+    sys.stderr = Espejo(sys.__stderr__, archivo_registro)
+    try:
+        main()
+    except SystemExit as motivo:
+        if str(motivo):
+            print("\nSE DETUVO:\n%s" % motivo)
+    except KeyboardInterrupt:
+        print("\nCancelado por el usuario.")
+    except Exception:
+        print("\nERROR INESPERADO:")
+        traceback.print_exc()
+    finally:
+        sys.stdout, sys.stderr = sys.__stdout__, sys.__stderr__
+        archivo_registro.close()
+        print("\nEl detalle de esta corrida quedo en %s" % RUTA_REGISTRO)
+        # En Windows la ventana se cierra sola al terminar y no da tiempo de
+        # leer nada; esto la deja abierta hasta que se presione Enter.
+        if os.name == "nt":
+            try:
+                input("\nPresiona Enter para cerrar...")
+            except EOFError:
+                pass
