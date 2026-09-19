@@ -177,25 +177,55 @@ def area_y_poligono(datos):
     """Devuelve (id de area, rejilla de segmentos) a partir de la frontera.
 
     En Overpass el area de una relacion es 3600000000 + el id de la relacion.
+
+    rel(BBOX_PAIS) devuelve las relaciones que TOCAN el rectangulo, asi que un
+    homonimo de un pais vecino puede colarse si su frontera roza el borde: hay
+    un Quezaltepeque en El Salvador y otro en Guatemala, un San Marcos en
+    varios paises, una Zaragoza en Espana. Por eso aqui se descarta lo que
+    quede centrado fuera del rectangulo y, si aun asi sobra mas de una
+    relacion, se prefiere avisar antes que adivinar y bajar el pais
+    equivocado.
     """
+    sur, oeste, norte, este = [float(x) for x in BBOX_PAIS.split(",")]
+    candidatas = []
     for relacion in datos.get("elements", []):
         if relacion.get("type") != "relation":
             continue
-        rejilla = collections.defaultdict(list)
-        for miembro in relacion.get("members", []):
-            puntos = miembro.get("geometry") or []
-            for a, b in zip(puntos, puntos[1:]):
-                if a["lat"] == b["lat"]:
-                    continue   # los segmentos horizontales no cruzan el rayo
-                segmento = (a["lat"], a["lon"], b["lat"], b["lon"])
-                desde = int(min(a["lat"], b["lat"]) / PASO_REJILLA)
-                hasta = int(max(a["lat"], b["lat"]) / PASO_REJILLA)
-                for banda in range(desde, hasta + 1):
-                    rejilla[banda].append(segmento)
-        if rejilla:
-            return 3600000000 + relacion["id"], dict(rejilla)
-    raise SystemExit(
-        "No se encontro la frontera de %s en OpenStreetMap. Revisa el PATRON." % DISTRITO)
+        puntos = [p for miembro in relacion.get("members", [])
+                  for p in (miembro.get("geometry") or [])]
+        if not puntos:
+            continue
+        lat = sum(p["lat"] for p in puntos) / len(puntos)
+        lon = sum(p["lon"] for p in puntos) / len(puntos)
+        if sur <= lat <= norte and oeste <= lon <= este:
+            candidatas.append((relacion, lat, lon))
+
+    if not candidatas:
+        raise SystemExit(
+            "No se encontro la frontera de %s dentro de El Salvador.\n"
+            "Revisa el PATRON: asi como esta, no casa con ninguna relacion." % DISTRITO)
+    if len(candidatas) > 1:
+        print("El patron '%s' casa con %d fronteras distintas:" % (PATRON, len(candidatas)))
+        for relacion, lat, lon in candidatas:
+            print("   relacion %-12d %-30s centro %.4f, %.4f"
+                  % (relacion["id"], relacion.get("tags", {}).get("name", ""), lat, lon))
+        raise SystemExit("Afina el PATRON para que quede una sola y vuelve a correrlo.")
+
+    relacion = candidatas[0][0]
+    rejilla = collections.defaultdict(list)
+    for miembro in relacion.get("members", []):
+        puntos = miembro.get("geometry") or []
+        for a, b in zip(puntos, puntos[1:]):
+            if a["lat"] == b["lat"]:
+                continue   # los segmentos horizontales no cruzan el rayo
+            segmento = (a["lat"], a["lon"], b["lat"], b["lon"])
+            desde = int(min(a["lat"], b["lat"]) / PASO_REJILLA)
+            hasta = int(max(a["lat"], b["lat"]) / PASO_REJILLA)
+            for banda in range(desde, hasta + 1):
+                rejilla[banda].append(segmento)
+    if not rejilla:
+        raise SystemExit("La frontera de %s vino sin geometria usable." % DISTRITO)
+    return 3600000000 + relacion["id"], dict(rejilla)
 
 
 def cae_dentro(lat, lon, rejilla):

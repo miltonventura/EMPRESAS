@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 """
 Descarga los comercios (shop=* de OpenStreetMap) del distrito de
-SAN SALVADOR, El Salvador.
+QUEZALTEPEQUE, La Libertad, El Salvador.
 
 Incluye supermercados, tiendas de conveniencia, centros comerciales, tiendas
 por departamentos, panaderias, carnicerias, ropa, zapaterias, joyerias,
@@ -15,15 +15,15 @@ Este archivo baja UN SOLO distrito. Para otro distrito solo hay que cambiar
 el bloque DISTRITO de mas abajo; todo lo demas queda igual.
 
 Uso:   pip install requests
-       python3 descargar_san_salvador.py
+       python3 descargar_quezaltepeque.py
 
 Deja en la carpeta 'datos':
-    comercios_san_salvador.csv
-    comercios_san_salvador.geojson
+    comercios_quezaltepeque.csv
+    comercios_quezaltepeque.geojson
 
 Los CSV de todos los distritos tienen las mismas columnas, asi que al final
 se pueden unir con:
-    head -1 datos/comercios_san_salvador.csv        >  datos/comercios_todos.csv
+    head -1 datos/comercios_quezaltepeque.csv       >  datos/comercios_todos.csv
     tail -q -n +2 datos/comercios_*.csv             >> datos/comercios_todos.csv
 
 Datos (c) colaboradores de OpenStreetMap, licencia ODbL.
@@ -42,8 +42,8 @@ import requests
 #   NOMBRE  es como quedara escrito en el CSV y en el nombre de los archivos.
 #   PATRON  admite las variantes de escritura con las que el nombre puede
 #           estar en OpenStreetMap (con o sin tilde, nombre antiguo, etc.).
-DISTRITO = "San Salvador"
-PATRON = "San Salvador"
+DISTRITO = "Quezaltepeque"
+PATRON = "Quezaltepeque"
 
 # ---------------------------------------------------------------- AJUSTES ---
 CARPETA = "datos"   # donde se guardan los resultados
