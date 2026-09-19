@@ -1484,6 +1484,7 @@ COLUMNAS_BASE = [
     "departamento",
     "municipio",
     "distrito",
+    "unidades_administrativas",
     "direccion",
     "calle",
     "numero",
@@ -1633,6 +1634,7 @@ class ClienteOverpass:
         self.consultas_realizadas = 0
         self.consultas_en_cache = 0
         self.bytes_descargados = 0
+        self.marca_datos_osm = ""
         self._ultimo_envio = 0.0
         if self.dir_cache:
             os.makedirs(self.dir_cache, exist_ok=True)
@@ -1667,6 +1669,9 @@ class ClienteOverpass:
                 remark = str(datos.get("remark", ""))
                 if "timed out" in remark or "out of memory" in remark:
                     raise ErrorSaturacion(remark)
+                marca = (datos.get("osm3s") or {}).get("timestamp_osm_base")
+                if marca:
+                    self.marca_datos_osm = str(marca)
                 if ruta:
                     with open(ruta, "w", encoding="utf-8") as fh:
                         json.dump(datos, fh, ensure_ascii=False)
@@ -2057,7 +2062,7 @@ class Localizador:
         # el mas fino (si existe otro) como "distrito"
         self.nivel_municipio = niveles[0] if niveles else None
         self.nivel_distrito = niveles[-1] if len(niveles) > 1 else None
-        self._cache: Dict[Tuple[float, float], Tuple[str, str]] = {}
+        self._cache: Dict[Tuple[float, float], Tuple[str, str, str]] = {}
 
     #: tolerancia (grados, ~330 m) para asignar el limite mas cercano cuando el
     #: punto queda justo fuera de todos los poligonos (bordes compartidos,
@@ -2065,28 +2070,43 @@ class Localizador:
     TOLERANCIA_CERCANIA = 0.003
 
     def ubicar(self, lat: float, lon: float) -> Tuple[str, str]:
+        """Municipio y distrito del punto (cadenas vacias si no se determinan)."""
+        municipio, distrito, _ = self.ubicar_detalle(lat, lon)
+        return municipio, distrito
+
+    def ubicar_detalle(self, lat: float, lon: float) -> Tuple[str, str, str]:
+        """Municipio, distrito y el listado de TODAS las unidades que lo contienen.
+
+        El tercer valor conserva cualquier nivel administrativo adicional que
+        exista en OSM (por ejemplo un nivel 7 intermedio), para que no se pierda
+        informacion si la division territorial cambia.
+        """
         clave = (round(lat, 5), round(lon, 5))
         if clave in self._cache:
             return self._cache[clave]
         municipio = ""
         distrito = ""
+        contenedoras: List[Tuple[int, str]] = []
         for unidad in self.unidades:
-            if unidad.contiene(lat, lon):
-                if unidad.nivel == self.nivel_municipio and not municipio:
-                    municipio = unidad.nombre
-                elif unidad.nivel == self.nivel_distrito and not distrito:
-                    distrito = unidad.nombre
-                elif not municipio and self.nivel_municipio is None:
-                    municipio = unidad.nombre
-            if municipio and (distrito or self.nivel_distrito is None):
-                break
+            if not unidad.contiene(lat, lon):
+                continue
+            contenedoras.append((unidad.nivel, unidad.nombre))
+            if unidad.nivel == self.nivel_municipio and not municipio:
+                municipio = unidad.nombre
+            elif unidad.nivel == self.nivel_distrito and not distrito:
+                distrito = unidad.nombre
+            elif not municipio and self.nivel_municipio is None:
+                municipio = unidad.nombre
         if not municipio:
             municipio = self._mas_cercano(lat, lon, self.nivel_municipio)
         if not distrito and self.nivel_distrito is not None:
             distrito = self._mas_cercano(lat, lon, self.nivel_distrito)
+        detalle = " | ".join("%s (nivel %d)" % (nombre, nivel)
+                             for nivel, nombre in sorted(contenedoras))
+        resultado = (municipio, distrito, detalle)
         if len(self._cache) < 500000:
-            self._cache[clave] = (municipio, distrito)
-        return municipio, distrito
+            self._cache[clave] = resultado
+        return resultado
 
     def _mas_cercano(self, lat: float, lon: float,
                      nivel: Optional[int]) -> str:
@@ -2115,8 +2135,12 @@ class Localizador:
 
 def construir_consulta(cat: Dict[str, Any], area_id: int,
                        bbox: Optional[Tuple[float, float, float, float]],
-                       timeout: int) -> str:
-    """Arma la consulta Overpass QL de una categoria dentro de un area."""
+                       timeout: int, salida: str = "tags center") -> str:
+    """Arma la consulta Overpass QL de una categoria dentro de un area.
+
+    `salida` es lo que se pide a Overpass: "tags center" para los datos o
+    "count" para solo contar (sin transferir los elementos).
+    """
     filtro_bbox = ""
     if bbox:
         filtro_bbox = "(%.6f,%.6f,%.6f,%.6f)" % bbox  # (sur,oeste,norte,este)
@@ -2126,7 +2150,7 @@ def construir_consulta(cat: Dict[str, Any], area_id: int,
     for selector in cat["selectores"]:
         lineas.append("  nwr%s(area.zona)%s;" % (selector, filtro_bbox))
     lineas.append(");")
-    lineas.append("out tags center;")
+    lineas.append("out %s;" % salida)
     return "\n".join(lineas)
 
 
@@ -2197,6 +2221,32 @@ def recolectar_categoria(cli: ClienteOverpass, cat: Dict[str, Any], dep: Area,
     return elementos
 
 
+def contar_categoria(cli: ClienteOverpass, cat: Dict[str, Any],
+                    dep: Area) -> Optional[Dict[str, int]]:
+    """Cuenta (sin descargar) cuantos elementos hay de una categoria en un area.
+
+    Devuelve {"nodes":.., "ways":.., "relations":.., "total":..} o None si el
+    servidor no alcanzo a contarlos.
+    """
+    ql = construir_consulta(cat, dep.area_overpass, None, cli.timeout_consulta,
+                            salida="count")
+    try:
+        datos = cli.consultar(ql, "conteo %s / %s" % (cat["clave"], dep.nombre))
+    except (ErrorSaturacion, ErrorOverpass):
+        return None
+    for el in datos.get("elements", []):
+        if el.get("type") == "count":
+            etiquetas = el.get("tags", {}) or {}
+            def _n(clave: str) -> int:
+                try:
+                    return int(etiquetas.get(clave, 0))
+                except (TypeError, ValueError):
+                    return 0
+            return {"nodes": _n("nodes"), "ways": _n("ways"),
+                    "relations": _n("relations"), "total": _n("total")}
+    return None
+
+
 # --------------------------------------------------------------------------- #
 # Conversion de elementos OSM a filas
 # --------------------------------------------------------------------------- #
@@ -2241,9 +2291,9 @@ def elemento_a_fila(el: Dict[str, Any], cat: Dict[str, Any], dep_nombre: str,
     tags = el.get("tags", {}) or {}
     subcat = valor_subcategoria(cat, tags)
 
-    municipio = distrito = ""
+    municipio = distrito = unidades_admin = ""
     if localizador is not None:
-        municipio, distrito = localizador.ubicar(lat, lon)
+        municipio, distrito, unidades_admin = localizador.ubicar_detalle(lat, lon)
 
     fila: Dict[str, Any] = {
         "categoria": cat["clave"],
@@ -2256,6 +2306,7 @@ def elemento_a_fila(el: Dict[str, Any], cat: Dict[str, Any], dep_nombre: str,
         "departamento": dep_nombre,
         "municipio": municipio,
         "distrito": distrito,
+        "unidades_administrativas": unidades_admin,
         "osm_tipo": el.get("type", ""),
         "osm_id": el.get("id", ""),
         "osm_url": "https://www.openstreetmap.org/%s/%s" % (el.get("type", ""),
@@ -2293,7 +2344,8 @@ ANCHOS_COLUMNA = {
     "categoria": 14, "categoria_es": 24, "grupo": 26, "subcategoria": 22,
     "subcategoria_es": 30, "nombre": 40, "nombre_alterno": 26, "marca": 22,
     "operador": 26, "latitud": 12, "longitud": 12, "departamento": 16,
-    "municipio": 22, "distrito": 22, "direccion": 42, "calle": 26,
+    "municipio": 22, "distrito": 22, "unidades_administrativas": 38,
+    "direccion": 42, "calle": 26,
     "numero": 9, "colonia_barrio": 24, "ciudad": 20, "codigo_postal": 12,
     "telefono": 18, "celular_whatsapp": 18, "correo": 26, "sitio_web": 34,
     "facebook": 26, "horario": 28, "cocina": 18, "deporte": 16, "religion": 16,
@@ -2466,6 +2518,23 @@ def escribir_resumen_general(ruta: str, resumen: List[Dict[str, Any]],
 # Proceso principal
 # --------------------------------------------------------------------------- #
 
+def crear_cliente(args: argparse.Namespace) -> ClienteOverpass:
+    """Cliente Overpass configurado con las opciones de la linea de comandos."""
+    endpoints = ENDPOINTS_OVERPASS
+    if args.endpoint:
+        endpoints = [args.endpoint] + [e for e in ENDPOINTS_OVERPASS
+                                       if e != args.endpoint]
+    return ClienteOverpass(
+        endpoints=endpoints,
+        dir_cache=None if args.sin_cache else args.cache,
+        pausa=args.pausa,
+        timeout_consulta=args.timeout,
+        timeout_http=args.timeout + 300,
+        max_reintentos=args.reintentos,
+        silencioso=args.silencioso,
+    )
+
+
 def ejecutar(args: argparse.Namespace) -> int:
     silencioso = args.silencioso
     fecha = _dt.datetime.now().strftime("%Y-%m-%d %H:%M")
@@ -2477,17 +2546,7 @@ def ejecutar(args: argparse.Namespace) -> int:
               "disponibles." % ", ".join(desconocidas), file=sys.stderr)
         return 2
 
-    cli = ClienteOverpass(
-        endpoints=[args.endpoint] + [e for e in ENDPOINTS_OVERPASS
-                                     if e != args.endpoint]
-        if args.endpoint else ENDPOINTS_OVERPASS,
-        dir_cache=None if args.sin_cache else args.cache,
-        pausa=args.pausa,
-        timeout_consulta=args.timeout,
-        timeout_http=args.timeout + 300,
-        max_reintentos=args.reintentos,
-        silencioso=silencioso,
-    )
+    cli = crear_cliente(args)
 
     log("extraer_osm v%s | shapely: %s" % (VERSION, "si" if HAY_SHAPELY else "no"),
         silencioso)
@@ -2604,6 +2663,102 @@ def ejecutar(args: argparse.Namespace) -> int:
     return 0
 
 
+def diagnostico(cli: ClienteOverpass, claves: Sequence[str],
+                nombres_departamentos: Sequence[str],
+                silencioso: bool = False) -> int:
+    """Revisa servidor, limites administrativos y cuanta informacion hay.
+
+    No descarga los datos: usa `out count`, asi que sirve para saber de antemano
+    cuantos registros traera cada categoria y cuanto durara la extraccion.
+    """
+    print("DIAGNOSTICO extraer_osm v%s" % VERSION)
+    print("=" * 78)
+    print("Servidores Overpass: %s" % ", ".join(
+        urllib.parse.urlsplit(e).netloc for e in cli.endpoints))
+    print("shapely instalada: %s" % ("si" if HAY_SHAPELY else "no (se usa el "
+                                     "algoritmo interno)"))
+    print("")
+
+    print("1) Limites administrativos")
+    departamentos = obtener_departamentos(cli, nombres_departamentos)
+    if cli.marca_datos_osm:
+        print("   datos de OSM actualizados al: %s" % cli.marca_datos_osm)
+    unidades: Dict[str, List[Area]] = {}
+    for dep in departamentos:
+        internas = obtener_unidades_internas(cli, dep)
+        unidades[dep.nombre] = internas
+        por_nivel: Dict[int, List[str]] = defaultdict(list)
+        for unidad in internas:
+            por_nivel[unidad.nivel].append(unidad.nombre)
+        s, w, n, e = dep.bbox
+        print("   %s (relacion %d) bbox %.3f,%.3f,%.3f,%.3f"
+              % (dep.nombre, dep.rel_id, s, w, n, e))
+        for nivel in sorted(por_nivel):
+            nombres = sorted(por_nivel[nivel])
+            print("      admin_level %d: %d %s -> %s"
+                  % (nivel, len(nombres),
+                     "unidad" if len(nombres) == 1 else "unidades",
+                     ", ".join(nombres[:6])
+                     + (", ..." if len(nombres) > 6 else "")))
+        if not internas:
+            print("      (!) sin unidades internas: las columnas municipio y "
+                  "distrito quedarian vacias")
+        loc = Localizador(dep, internas)
+        print("      se reportara: municipio = admin_level %s, distrito = "
+              "admin_level %s"
+              % (loc.nivel_municipio if loc.nivel_municipio else "-",
+                 loc.nivel_distrito if loc.nivel_distrito else "-"))
+    print("")
+
+    print("2) Cantidad de elementos por categoria (consulta `out count`)")
+    encabezado = "   %-18s %12s %12s %12s" % ("categoria", "", "", "")
+    print("   %-18s %10s %10s %10s %10s" % ("categoria", "nodos", "vias",
+                                            "relaciones", "TOTAL"))
+    print("   " + "-" * 62)
+    del encabezado
+    gran_total = 0
+    sin_contar: List[str] = []
+    for clave in claves:
+        cat = CATEGORIAS[clave]
+        suma = {"nodes": 0, "ways": 0, "relations": 0, "total": 0}
+        completo = True
+        for dep in departamentos:
+            conteo = contar_categoria(cli, cat, dep)
+            if conteo is None:
+                completo = False
+                continue
+            for k in suma:
+                suma[k] += conteo[k]
+        if not completo:
+            sin_contar.append(clave)
+        print("   %-18s %10d %10d %10d %10d%s"
+              % (clave, suma["nodes"], suma["ways"], suma["relations"],
+                 suma["total"], "" if completo else "  (parcial)"))
+        gran_total += suma["total"]
+    print("   " + "-" * 62)
+    print("   %-18s %43d" % ("TOTAL", gran_total))
+    print("")
+    if sin_contar:
+        print("   (!) No se pudo contar completo: %s. Son las categorias mas "
+              "grandes;\n       el script las divide en mosaicos al extraerlas."
+              % ", ".join(sin_contar))
+    minutos = max(1, int(gran_total / 12000.0) + 2 * len(claves))
+    print("3) Estimacion")
+    print("   registros esperados: ~%d" % gran_total)
+    print("   duracion aproximada: ~%d minutos (%.1f horas), segun la carga del "
+          "servidor" % (minutos, minutos / 60.0))
+    print("   espacio en disco: ~%.0f MB de cache + ~%.0f MB de Excel"
+          % (gran_total * 0.0004, gran_total * 0.0003))
+    print("")
+    if cli.marca_datos_osm:
+        print("Datos de OSM actualizados al %s | (c) colaboradores de "
+              "OpenStreetMap (ODbL 1.0)" % cli.marca_datos_osm)
+    print("Para extraer: python extraer_osm.py %s"
+          % ("" if len(claves) == len(CATEGORIAS)
+             else "--categorias " + " ".join(claves)))
+    return 0
+
+
 # --------------------------------------------------------------------------- #
 # Autoprueba (no requiere red): valida geometria, consultas y escritura
 # --------------------------------------------------------------------------- #
@@ -2636,6 +2791,36 @@ def autoprueba(dir_salida: str) -> int:
           and 'nwr["highway"="bus_stop"](area.zona)(13.600000,-89.300000,'
               '13.800000,-89.100000);' in ql
           and ql.rstrip().endswith("out tags center;"), ql)
+
+    ql_conteo = construir_consulta(CATEGORIAS["amenity"], 3600001234, None, 600,
+                                   salida="count")
+    check("consulta de conteo sin bbox",
+          ql_conteo.rstrip().endswith("out count;")
+          and 'nwr["amenity"](area.zona);' in ql_conteo, ql_conteo)
+
+    class _ClienteFalso(ClienteOverpass):
+        def __init__(self, respuesta):
+            super().__init__(dir_cache=None, pausa=0, silencioso=True)
+            self.respuesta = respuesta
+
+        def consultar(self, ql, descripcion=""):
+            if isinstance(self.respuesta, Exception):
+                raise self.respuesta
+            return self.respuesta
+
+    dep_falso = Area("Depto", 4, 55, [[(13.0, -89.5), (13.0, -89.0),
+                                       (13.5, -89.0), (13.5, -89.5),
+                                       (13.0, -89.5)]])
+    conteo = contar_categoria(
+        _ClienteFalso({"elements": [{"type": "count", "id": 0, "tags": {
+            "nodes": "120", "ways": "34", "relations": "2", "total": "156"}}]}),
+        CATEGORIAS["shop"], dep_falso)
+    check("lectura del conteo de Overpass",
+          conteo == {"nodes": 120, "ways": 34, "relations": 2, "total": 156},
+          str(conteo))
+    check("conteo devuelve None si el servidor se satura",
+          contar_categoria(_ClienteFalso(ErrorSaturacion("timeout")),
+                           CATEGORIAS["building"], dep_falso) is None)
 
     # --- mosaicos ---
     mosaicos = dividir_bbox((13.0, -89.5, 14.0, -88.5), 2)
@@ -2721,6 +2906,13 @@ def autoprueba(dir_salida: str) -> int:
                            abs_tol=1e-6)
           and sin_shapely.distancia_grados(13.1, -89.20) > 0.04)
 
+    check("columna de unidades administrativas presente",
+          "unidades_administrativas" in COLUMNAS_BASE)
+    check("detalle con todos los niveles administrativos",
+          loc.ubicar_detalle(13.1, -89.45)[2]
+          == "Municipio A (nivel 6) | Distrito A1 (nivel 8)",
+          loc.ubicar_detalle(13.1, -89.45)[2])
+
     # --- conversion de elementos ---
     fecha = "2026-01-01 00:00"
     nodo = {
@@ -2751,6 +2943,10 @@ def autoprueba(dir_salida: str) -> int:
               and fila["latitud"] == 13.1 and fila["longitud"] == -89.45)
         check("todas las etiquetas en JSON",
               json.loads(fila["todas_las_etiquetas"])["shop"] == "supermarket")
+        check("niveles administrativos en la fila",
+              fila["unidades_administrativas"]
+              == "Municipio A (nivel 6) | Distrito A1 (nivel 8)",
+              fila["unidades_administrativas"])
 
     via = {"type": "way", "id": 222, "center": {"lat": 13.05, "lon": -89.45},
            "tags": {"highway": "bus_stop", "name": "Parada Centro"}}
@@ -2858,6 +3054,7 @@ def construir_parser() -> argparse.ArgumentParser:
   python extraer_osm.py --departamentos "San Salvador" --formato ambos
   python extraer_osm.py --categorias building --division 6 --pausa 4
   python extraer_osm.py --listar-categorias
+  python extraer_osm.py --diagnostico
   python extraer_osm.py --autoprueba
 """)
     p.add_argument("--categorias", "-c", nargs="+", metavar="CLAVE",
@@ -2892,6 +3089,9 @@ def construir_parser() -> argparse.ArgumentParser:
                    help="menos mensajes en pantalla")
     p.add_argument("--listar-categorias", action="store_true",
                    help="muestra las categorias y subcategorias disponibles y sale")
+    p.add_argument("--diagnostico", action="store_true",
+                   help="revisa el servidor y los limites, cuenta cuantos "
+                        "elementos hay por categoria (sin descargarlos) y sale")
     p.add_argument("--autoprueba", action="store_true",
                    help="ejecuta pruebas internas sin usar la red y sale")
     p.add_argument("--version", action="version", version="extraer_osm %s" % VERSION)
@@ -2906,6 +3106,15 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     if args.autoprueba:
         return autoprueba(os.path.join(args.salida, "_autoprueba"))
     try:
+        if args.diagnostico:
+            claves = args.categorias or list(CATEGORIAS.keys())
+            desconocidas = [c for c in claves if c not in CATEGORIAS]
+            if desconocidas:
+                print("Categorias desconocidas: %s" % ", ".join(desconocidas),
+                      file=sys.stderr)
+                return 2
+            return diagnostico(crear_cliente(args), claves, args.departamentos,
+                               args.silencioso)
         return ejecutar(args)
     except ErrorOverpass as exc:
         print("\nERROR de Overpass: %s" % exc, file=sys.stderr)

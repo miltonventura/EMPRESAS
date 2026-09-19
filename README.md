@@ -25,7 +25,16 @@ python extraer_osm.py --departamentos "San Salvador"    # un solo departamento
 python extraer_osm.py --formato ambos                   # genera .xlsx y .csv
 python extraer_osm.py --listar-categorias               # ver categorías y subcategorías
 python extraer_osm.py --categorias building --pausa 4   # ser más amable con el servidor
+python extraer_osm.py --diagnostico                     # antes de descargar: ¿cuánto hay?
 ```
+
+### Empiece con `--diagnostico`
+
+Antes de la primera extracción conviene correr `--diagnostico`. No descarga datos: verifica
+el servidor, muestra los límites administrativos que encontró (con los `admin_level` reales
+de OSM y cuáles se usarán como municipio y distrito) y, con consultas `out count`, dice
+**cuántos elementos traerá cada categoría**, el tiempo aproximado y el espacio en disco.
+Así sabe qué esperar y detecta cualquier problema en minutos, no en horas.
 
 Opciones principales:
 
@@ -40,6 +49,7 @@ Opciones principales:
 | `--timeout`, `--pausa`, `--reintentos` | Control de la carga sobre el servidor |
 | `--division N` | Forzar división de las consultas en N×N mosaicos |
 | `--sin-admin` | No asignar municipio/distrito (más rápido) |
+| `--diagnostico` | Verifica servidor y límites, y cuenta elementos sin descargarlos |
 | `--autoprueba` | Pruebas internas sin red |
 
 ## Categorías (21 archivos de salida)
@@ -74,11 +84,11 @@ Hojas de cada `.xlsx`:
 Además se genera `00_RESUMEN_GENERAL.xlsx` con los totales por categoría, los registros por
 municipio y la lista de límites administrativos utilizados.
 
-Columnas de la hoja *Datos* (52 en total, según la categoría):
+Columnas de la hoja *Datos* (53 en total, según la categoría):
 
 `categoria`, `categoria_es`, `grupo`, `subcategoria`, `subcategoria_es`, `nombre`,
 `nombre_alterno`, `marca`, `operador`, `latitud`, `longitud`, `departamento`, `municipio`,
-`distrito`, `direccion`, `calle`, `numero`, `colonia_barrio`, `ciudad`, `codigo_postal`,
+`distrito`, `unidades_administrativas`, `direccion`, `calle`, `numero`, `colonia_barrio`, `ciudad`, `codigo_postal`,
 `telefono`, `celular_whatsapp`, `correo`, `sitio_web`, `facebook`, `horario`, `cocina`,
 `deporte`, `religion`, `accesibilidad`, `internet`, `acepta_tarjeta`, `niveles_edificio`,
 `capacidad`, `wikidata`, `codigo_referencia`, `descripcion`, `fuente_osm`, `osm_tipo`,
@@ -94,7 +104,9 @@ pierda ningún dato).
    `out tags center`, de modo que nodos, vías y relaciones traen un punto representativo.
 3. Las categorías grandes (`building`, `landuse`, `natural`, `man_made`, …) se dividen en
    mosaicos; si el servidor se satura, el mosaico se subdivide en 4 y se reintenta.
-4. A cada elemento se le asigna municipio y distrito por geometría (*point-in-polygon*).
+4. A cada elemento se le asigna municipio y distrito por geometría (*point-in-polygon*), y la
+   columna `unidades_administrativas` guarda **todos** los niveles que lo contienen, por si la
+   división territorial de OSM cambia o tiene niveles intermedios.
    Los puntos exactamente sobre un límite cuentan como dentro, y los que quedan hasta
    ~300 m fuera de todo polígono se asignan al límite más cercano.
 5. Un elemento que cruza el límite entre los dos departamentos se guarda **una sola vez**,
