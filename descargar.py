@@ -4,16 +4,12 @@
 Descarga empresas desde OpenStreetMap para 28 distritos de El Salvador
 (AMSS y la franja costera de La Libertad).
 
-Categorias (siguiendo las llaves raiz de OpenStreetMap):
-  comercios         shop=*        supermercados, tiendas, farmacias, ferreterias,
-                                  repuestos, librerias, mascotas, lavanderias...
-  oficinas          office=*      empresas, gobierno, abogados, aseguradoras,
-                                  inmobiliarias, ONG, courier, coworking...
-  talleres_oficios  craft=*       carpinteria, electricistas, herreria, sastreria,
-                                  imprentas, tapicerias, cervecerias artesanales...
-  marcas_cadenas    brand=*       franquicias y cadenas (Super Selectos, Campero...)
-  industrias        industrial=*  fabricas, bodegas, refinerias, aserraderos,
-                                  rastros, astilleros...
+Categoria: oficinas y empresas (office=* de OpenStreetMap). Incluye
+empresas, gobierno, abogados, notarias, contadores, aseguradoras,
+inmobiliarias, tecnologia, telecomunicaciones, agencias de empleo,
+arquitectos, ingenieria, consultoria, publicidad, ONG, fundaciones,
+partidos politicos, embajadas, logistica, courier, constructoras y
+coworking.
 
 Uso:   pip install requests
        python3 descargar.py
@@ -81,64 +77,29 @@ SERVIDORES = [
 # marcan el mismo tipo de negocio, y busquedas por nombre en espanol para los
 # lugares que quedaron mal etiquetados.
 CATEGORIAS = {
-    # ---- shop=* : comercios y tiendas -------------------------------------
-    "comercios": [
-        # Las 150+ variantes de shop=* de una sola vez.
-        'nwr["shop"]',
-        # Comercios que en OSM no viven bajo shop=*.
-        'nwr["amenity"~"^(pharmacy|marketplace|fuel|car_wash|car_rental|veterinary|bureau_de_change|money_transfer|internet_cafe|vehicle_inspection)$"]',
-        'nwr["healthcare"="pharmacy"]',
-        'nwr["landuse"="retail"]["name"]',
-        'nwr["building"~"^(retail|supermarket|kiosk)$"]["name"]',
-        # Rotulos tipicos de comercio salvadoreno.
-        'nwr["name"~"supermercad|minis[úu]per|despensa|abarroter|tienda|almacen|bazar|variedades|novedades|boutique|venta de|distribuidora|dep[óo]sito|agroservicio|ferreter|farmacia|librer|papeler|floris|floricultur|zapater|joyer|reloger|muebler|electrodom|celulares|computador|repuestos|llanter|llantas|lubricentro|autolote|lavander|tintorer|empe[ñn]o|veterinar|mascotas|panader|pasteler|carnicer|verduler|fruter|pupuser|vidrier|pintur|colchon|deportes|juguet|[óo]ptica|perfumer",i][!"highway"][!"landuse"][!"place"][!"boundary"]',
-    ],
     # ---- office=* : oficinas y empresas -----------------------------------
+    # Primero se pide la llave completa, asi entran de una sola vez todos los
+    # valores de office=* (company, government, lawyer, notary, accountant,
+    # insurance, estate_agent, it, telecommunication, employment_agency,
+    # architect, engineer, consulting, advertising_agency, ngo, foundation,
+    # political_party, diplomatic, logistics, courier, construction_company,
+    # coworking, etc.). Luego se agregan redes de seguridad: llaves vecinas
+    # que marcan lo mismo y busquedas por nombre para lo mal etiquetado.
     "oficinas": [
         'nwr["office"]',
         # Sedes de gobierno y representaciones que OSM marca con amenity.
         'nwr["amenity"~"^(townhall|courthouse|post_office|embassy|public_building|prosecutor)$"]',
         'nwr["diplomatic"]',
         'nwr["building"="office"]["name"]',
-        'nwr["name"~"bufete|abogad|jur[ií]dic|notar[ií]a|contador|contadur[ií]a|auditor|aseguradora|seguros |correduri|inmobiliaria|bienes ra[ií]ces|consultor|asesor[ií]a|publicidad|mercadeo|agencia de|corredora|corporaci[óo]n|sociedad an[óo]nima|constructora|urbanizadora|ingenier[ií]a|arquitect|fundaci[óo]n|asociaci[óo]n|cooperativa|ministerio de|viceministerio|alcald[ií]a|embajada|consulado|c[áa]mara de|gremial|courier|encomiendas|paqueter|log[ií]stica|aduanal|coworking|call center|outsourcing|telecomunicaciones",i][!"highway"][!"landuse"][!"place"][!"boundary"]',
-    ],
-    # ---- craft=* : talleres y oficios -------------------------------------
-    "talleres_oficios": [
-        'nwr["craft"]',
-        # Talleres que se etiquetan como comercio de reparacion.
-        'nwr["shop"~"^(car_repair|motorcycle_repair|bicycle_repair|electronics_repair|appliance_repair|shoe_repair|watch_repair|tailor|sewing|fabric|locksmith|printing|glaziery|upholsterer|blacksmith|carpenter|craft)$"]',
-        'nwr["name"~"taller|carpinter|ebanister|electricista|instalaciones el[ée]ctricas|fontaner|plomer|aire acondicionado|refrigeraci[óo]n|herrer|estructuras met[áa]licas|soldadura|soldador|torno|sastrer|costurer|modister|zapater|reparaci[óo]n de|fot[óo]graf|fotograf[ií]a|joyer|tapicer|imprenta|litograf|tipograf|serigraf|rotulaci[óo]n|r[óo]tulos|cervecer[ií]a artesanal|alfarer|cer[áa]mica|artesan|vitrales|marmoler|hojalater|enderezado|pintura automotriz",i][!"highway"][!"landuse"][!"place"][!"boundary"]',
-    ],
-    # ---- brand=* : marcas, franquicias y cadenas --------------------------
-    "marcas_cadenas": [
-        'nwr["brand"]',
-        'nwr["brand:wikidata"]',
-        # Sucursales identificadas por el operador de la cadena.
-        'nwr["operator"]["shop"]',
-        'nwr["operator"]["amenity"~"^(fast_food|restaurant|cafe|pharmacy|fuel|bank|atm|ice_cream)$"]',
-        # Cadenas conocidas de El Salvador que a veces no llevan brand=*.
-        'nwr["name"~"s[úu]per selectos|selectos market|despensa de don juan|despensa familiar|maxi despensa|walmart|la tapachulteca|pricesmart|pollo campero|pollo real|pollo indio|biggest|china wok|pizza hut|papa ?john|domino|mcdonald|burger king|wendy|subway|starbucks|the coffee cup|ban ?ban|mister donut|cinnabon|farmacia econ[óo]mica|farmacias econ[óo]mica|farmacia san nicol[áa]s|farmacia las am[ée]ricas|farmacia brasil|siman|la curacao|almacenes tropigas|la casa del repuesto|vidr[ií]|freund|office depot|radio ?shack|texaco|alba petr[óo]leos|grupo q|excel automotriz|didea|s[úu]per repuestos|multiplaza|metrocentro|plaza mundo|unicentro|las cascadas|banco agr[ií]cola|banco cuscatl[áa]n|davivienda|promerica|scotiabank|banco hipotecario|banco de am[ée]rica central|caja de cr[ée]dito",i][!"highway"][!"landuse"][!"place"][!"boundary"]',
-    ],
-    # ---- industrial=* : industria y bodegas -------------------------------
-    "industrias": [
-        'nwr["industrial"]',
-        'nwr["man_made"="works"]',
-        'nwr["landuse"="industrial"]["name"]',
-        'nwr["building"~"^(industrial|warehouse|factory|manufacture)$"]["name"]',
-        'nwr["craft"~"^(sawmill|shipyard|brewery|distillery|winery|grinding_mill)$"]',
-        'nwr["shop"="warehouse"]',
-        'nwr["name"~"f[áa]brica|fabricaci[óo]n|manufactur|maquila|bodega|almacenadora|zona franca|parque industrial|refiner|aserrader|rastro|matadero|astillero|industrias|industrial|planta de|procesadora|empacadora|embotellador|ingenio|molino|beneficio|trillo|agroindustri|cementera|concretera|prefabricad|metalmec[áa]nic|plastic|textil",i][!"highway"][!"landuse"][!"place"][!"boundary"]',
+        # Rotulos tipicos de oficinas y empresas en El Salvador.
+        'nwr["name"~"bufete|abogad|jur[ií]dic|notar[ií]a|despacho|contador|contadur[ií]a|auditor|aseguradora|seguros |correduri|inmobiliaria|bienes ra[ií]ces|consultor|asesor[ií]a|publicidad|mercadeo|agencia de|corredora|corporaci[óo]n|sociedad an[óo]nima|importadora|exportadora|comercializadora|constructora|urbanizadora|ingenier[ií]a|arquitect|tecnolog[ií]a|inform[áa]tica|software|sistemas |soluciones |desarrolladora|telecomunicaciones|empleo|recursos humanos|bolsa de trabajo|fundaci[óo]n|asociaci[óo]n|cooperativa|sindicato|partido |ministerio de|viceministerio|alcald[ií]a|embajada|consulado|c[áa]mara de|gremial|courier|encomiendas|paqueter|log[ií]stica|aduanal|coworking|call center|outsourcing",i][!"highway"][!"landuse"][!"place"][!"boundary"]',
     ],
 }
 
 # Llave de OSM que mejor describe cada categoria; se usa para nombrar la
 # subcategoria de cada resultado (por ejemplo shop=hardware, office=lawyer).
 LLAVE_PRINCIPAL = {
-    "comercios":        ["shop", "amenity", "healthcare"],
-    "oficinas":         ["office", "diplomatic", "amenity"],
-    "talleres_oficios": ["craft", "shop"],
-    "marcas_cadenas":   ["brand", "shop", "amenity", "office", "craft"],
-    "industrias":       ["industrial", "man_made", "landuse", "building"],
+    "oficinas": ["office", "diplomatic", "amenity", "building"],
 }
 
 COLUMNAS = ["categoria", "subcategoria", "nombre", "distrito", "marca", "operador",
