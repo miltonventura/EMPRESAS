@@ -118,8 +118,13 @@ LLAVES_TIPO = ["shop", "office", "craft", "industrial", "amenity", "healthcare",
 # administrativos para que no aparezcan homonimos de otros paises.
 BBOX_PAIS = "13.00,-90.30,14.60,-87.60"
 
-TIMEOUT_CONSULTA = 900          # segundos que se le piden a Overpass
-MAXSIZE_CONSULTA = 1073741824   # 1 GB; las categorias completas son grandes
+# El proxy de entrada de los servidores publicos corta alrededor de los
+# 180 s, asi que pedir mas es contraproducente: en vez de un aviso limpio de
+# Overpass ("Query timed out"), que este script sabe reintentar, la conexion
+# muere con un 504 seco. Tampoco se fija maxsize: reservar memoria de mas
+# obliga al despachador a esperar un bloque libre grande, y esa espera por si
+# sola agota el tiempo del gateway.
+TIMEOUT_CONSULTA = 180          # segundos que se le piden a Overpass
 PASO_REJILLA = 0.005            # ~550 m; agrupa los segmentos de frontera por latitud
 PAUSA_ENTRE_CONSULTAS = 3       # segundos de cortesia con el servidor publico
 
@@ -141,7 +146,7 @@ def consultar(consulta, etiqueta, obligatorio=True):
     for intento in range(4):
         servidor = SERVIDORES[intento % len(SERVIDORES)]
         try:
-            r = requests.post(servidor, data={"data": consulta}, timeout=1200,
+            r = requests.post(servidor, data={"data": consulta}, timeout=300,
                               headers={"User-Agent": "empresas-sv/1.0"})
             if r.status_code == 200:
                 datos = r.json()
@@ -164,47 +169,70 @@ def consultar(consulta, etiqueta, obligatorio=True):
     return None
 
 
-def consulta_de_categoria(categoria, patrones=None):
-    filtros = "\n".join("  %s(area.zona);" % f for f in CATEGORIAS[categoria])
-    return ("[out:json][timeout:%d][maxsize:%d];\n%s\n.d map_to_area ->.zona;\n(\n%s\n);\n"
-            "out tags center;"
-            % (TIMEOUT_CONSULTA, MAXSIZE_CONSULTA, seleccion(patrones), filtros))
+def grupos_de_filtros(categoria):
+    """Separa los filtros por tag de los que buscan dentro del nombre.
+
+    Los de tag usan los indices de Overpass y vuelan. El de nombre obliga a
+    revisar el texto de cada elemento del area y es, con diferencia, el mas
+    lento. Pedirlos en consultas distintas evita que el lento arrastre a los
+    rapidos cuando el servidor corta la conexion.
+    """
+    return [
+        ("tags",    [f for f in CATEGORIAS[categoria] if not f.startswith('nwr["name"')]),
+        ("nombres", [f for f in CATEGORIAS[categoria] if f.startswith('nwr["name"')]),
+    ]
 
 
-def descargar_categoria(categoria):
-    """Baja la categoria distrito por distrito (una consulta por distrito).
+def consulta_de_categoria(area_id, filtros):
+    """Arma la consulta apuntando al area ya conocida del distrito.
 
-    Es mas lento que pedir los 28 distritos de un solo golpe, pero cada
-    consulta es pequena: no se topa con los limites de memoria ni de tiempo
-    de Overpass, se ve el avance, y un distrito que falle no arrastra a los
-    demas. Cada elemento se marca con el distrito que lo devolvio.
+    Se usa area(<id>) en vez de volver a buscar la frontera con
+    rel(bbox)[name~...] + map_to_area: esa reconstruccion escanea todas las
+    relaciones administrativas del pais y se repetiria en cada consulta,
+    aunque las fronteras ya se descargaron al inicio.
+    """
+    cuerpo = "\n".join("  %s(area.zona);" % f for f in filtros)
+    return ("[out:json][timeout:%d];\narea(%d)->.zona;\n(\n%s\n);\nout tags center;"
+            % (TIMEOUT_CONSULTA, area_id, cuerpo))
+
+
+def descargar_categoria(categoria, distritos):
+    """Baja la categoria distrito por distrito, y en cada uno por grupo.
+
+    Cada consulta queda pequena: un distrito y un grupo de filtros. Se ve el
+    avance, ninguna se acerca a los limites del servidor y lo que falle se
+    omite y se anota sin arrastrar al resto.
     """
     vistos, elementos, fallaron = set(), [], []
-    for numero, (nombre, patron) in enumerate(DISTRITOS, 1):
-        print("  [%2d/%d] %s" % (numero, len(DISTRITOS), nombre))
-        datos = consultar(consulta_de_categoria(categoria, [patron]),
-                          "%s / %s" % (categoria, nombre), obligatorio=False)
-        if datos is None:
-            print("         sin respuesta, se omite este distrito")
-            fallaron.append(nombre)
-            continue
+    for numero, (nombre, area_id) in enumerate(distritos, 1):
+        print("  [%2d/%d] %s" % (numero, len(distritos), nombre))
+        for grupo, filtros in grupos_de_filtros(categoria):
+            if not filtros:
+                continue
+            datos = consultar(consulta_de_categoria(area_id, filtros),
+                              "%s / %s / %s" % (categoria, nombre, grupo),
+                              obligatorio=False)
+            if datos is None:
+                print("         %-8s sin respuesta, se omite" % grupo)
+                fallaron.append("%s (%s)" % (nombre, grupo))
+                continue
 
-        devueltos = datos.get("elements", [])
-        nuevos = 0
-        for elemento in devueltos:
-            clave = (elemento["type"], elemento["id"])
-            if clave in vistos:
-                continue            # ya vino de un distrito vecino
-            vistos.add(clave)
-            elemento["_distrito"] = nombre
-            elementos.append(elemento)
-            nuevos += 1
-        print("         %d lugares, %d nuevos (van %d)"
-              % (len(devueltos), nuevos, len(elementos)))
-        time.sleep(PAUSA_ENTRE_CONSULTAS)
+            devueltos = datos.get("elements", [])
+            nuevos = 0
+            for elemento in devueltos:
+                clave = (elemento["type"], elemento["id"])
+                if clave in vistos:
+                    continue        # ya vino de otro grupo o de un vecino
+                vistos.add(clave)
+                elemento["_distrito"] = nombre
+                elementos.append(elemento)
+                nuevos += 1
+            print("         %-8s %d lugares, %d nuevos (van %d)"
+                  % (grupo, len(devueltos), nuevos, len(elementos)))
+            time.sleep(PAUSA_ENTRE_CONSULTAS)
 
     if fallaron:
-        print("  OJO, %d distrito(s) sin datos: %s" % (len(fallaron), ", ".join(fallaron)))
+        print("  OJO, %d consulta(s) sin datos: %s" % (len(fallaron), ", ".join(fallaron)))
     return elementos
 
 
@@ -224,6 +252,30 @@ def descargar_distritos():
     with open(cache, "w", encoding="utf-8") as fh:
         json.dump(datos, fh)
     return datos
+
+
+def areas_de_distrito(datos):
+    """Empareja cada distrito de la lista con el area de su frontera.
+
+    En Overpass el area de una relacion es 3600000000 + el id de la relacion.
+    Como las fronteras ya se descargaron, reusar esos numeros evita volver a
+    calcular el area en cada una de las consultas.
+    """
+    por_nombre = {}
+    for relacion in datos.get("elements", []):
+        nombre = relacion.get("tags", {}).get("name", "")
+        if relacion.get("type") == "relation" and nombre and nombre not in por_nombre:
+            por_nombre[nombre] = 3600000000 + relacion["id"]
+
+    distritos, faltan = [], []
+    for nombre, patron in DISTRITOS:
+        hallados = [osm for osm in por_nombre
+                    if re.fullmatch(patron, osm, re.IGNORECASE)]
+        if hallados:
+            distritos.append((nombre, por_nombre[hallados[0]]))
+        else:
+            faltan.append(nombre)
+    return distritos, faltan
 
 
 def armar_poligonos(datos):
@@ -321,11 +373,10 @@ def guardar_csv(ruta, filas):
 def main():
     os.makedirs(CARPETA, exist_ok=True)
 
-    poligonos = armar_poligonos(descargar_distritos())
-    print("  %d distritos encontrados" % len(poligonos))
-    faltan = [n for n, patron in DISTRITOS
-              if not any(re.fullmatch(patron, nombre, re.IGNORECASE)
-                         for nombre in poligonos)]
+    fronteras = descargar_distritos()
+    poligonos = armar_poligonos(fronteras)
+    distritos, faltan = areas_de_distrito(fronteras)
+    print("  %d distritos encontrados" % len(distritos))
     if faltan:
         print("  OJO, sin frontera en OSM: %s" % ", ".join(faltan))
     print()
@@ -333,7 +384,7 @@ def main():
     todas = {}
     for categoria in CATEGORIAS:
         print("Descargando %s..." % categoria)
-        elementos = descargar_categoria(categoria)
+        elementos = descargar_categoria(categoria, distritos)
         filas = [f for f in (fila(e, categoria, poligonos) for e in elementos) if f]
         filas.sort(key=lambda f: (f["distrito"], f["nombre"] == "", f["nombre"].lower()))
 
