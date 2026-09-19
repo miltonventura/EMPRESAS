@@ -1,0 +1,6 @@
+# Cache de Python
+__pycache__/
+*.py[cod]
+
+# Resultados de la descarga (se regeneran con: python3 descargar.py)
+datos/
