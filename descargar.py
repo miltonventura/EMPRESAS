@@ -12,6 +12,10 @@ computadoras, venta y taller de autos, repuestos, llantas, librerias,
 papelerias, florerias, agroservicios, mascotas, lavanderias, casas de
 empeno y el resto de los ~150 valores de shop=*.
 
+La descarga se hace distrito por distrito: 28 consultas pequenas en vez de
+una sola gigante. Tarda mas, pero es mucho mas predecible y un distrito que
+falle no tumba el resto.
+
 Uso:   pip install requests
        python3 descargar.py
 
@@ -117,6 +121,7 @@ BBOX_PAIS = "13.00,-90.30,14.60,-87.60"
 TIMEOUT_CONSULTA = 900          # segundos que se le piden a Overpass
 MAXSIZE_CONSULTA = 1073741824   # 1 GB; las categorias completas son grandes
 PASO_REJILLA = 0.005            # ~550 m; agrupa los segmentos de frontera por latitud
+PAUSA_ENTRE_CONSULTAS = 3       # segundos de cortesia con el servidor publico
 
 
 def seleccion(patrones=None):
@@ -167,25 +172,39 @@ def consulta_de_categoria(categoria, patrones=None):
 
 
 def descargar_categoria(categoria):
-    """Baja una categoria completa; si no pasa, la reintenta distrito por distrito."""
-    datos = consultar(consulta_de_categoria(categoria), categoria, obligatorio=False)
-    if datos is not None:
-        return datos.get("elements", [])
+    """Baja la categoria distrito por distrito (una consulta por distrito).
 
-    print("   la consulta completa no paso; probando distrito por distrito...")
-    vistos, elementos = set(), []
-    for nombre, patron in DISTRITOS:
-        parcial = consultar(consulta_de_categoria(categoria, [patron]),
-                            "%s / %s" % (categoria, nombre), obligatorio=False)
-        if parcial is None:
-            print("   sin datos de %s en %s" % (categoria, nombre))
+    Es mas lento que pedir los 28 distritos de un solo golpe, pero cada
+    consulta es pequena: no se topa con los limites de memoria ni de tiempo
+    de Overpass, se ve el avance, y un distrito que falle no arrastra a los
+    demas. Cada elemento se marca con el distrito que lo devolvio.
+    """
+    vistos, elementos, fallaron = set(), [], []
+    for numero, (nombre, patron) in enumerate(DISTRITOS, 1):
+        print("  [%2d/%d] %s" % (numero, len(DISTRITOS), nombre))
+        datos = consultar(consulta_de_categoria(categoria, [patron]),
+                          "%s / %s" % (categoria, nombre), obligatorio=False)
+        if datos is None:
+            print("         sin respuesta, se omite este distrito")
+            fallaron.append(nombre)
             continue
-        for elemento in parcial.get("elements", []):
+
+        devueltos = datos.get("elements", [])
+        nuevos = 0
+        for elemento in devueltos:
             clave = (elemento["type"], elemento["id"])
-            if clave not in vistos:
-                vistos.add(clave)
-                elementos.append(elemento)
-        time.sleep(3)
+            if clave in vistos:
+                continue            # ya vino de un distrito vecino
+            vistos.add(clave)
+            elemento["_distrito"] = nombre
+            elementos.append(elemento)
+            nuevos += 1
+        print("         %d lugares, %d nuevos (van %d)"
+              % (len(devueltos), nuevos, len(elementos)))
+        time.sleep(PAUSA_ENTRE_CONSULTAS)
+
+    if fallaron:
+        print("  OJO, %d distrito(s) sin datos: %s" % (len(fallaron), ", ".join(fallaron)))
     return elementos
 
 
@@ -273,7 +292,9 @@ def fila(elemento, categoria, poligonos):
         "categoria": categoria,
         "subcategoria": subcat,
         "nombre": valor(tags, "name", "name:es", "brand", "operator"),
-        "distrito": distrito_de(lat, lon, poligonos),
+        # El calculo geometrico manda; si el punto cae justo sobre la
+        # frontera y no resuelve, vale el distrito cuya consulta lo devolvio.
+        "distrito": distrito_de(lat, lon, poligonos) or elemento.get("_distrito", ""),
         "marca": valor(tags, "brand", "brand:short"),
         "operador": valor(tags, "operator", "brand"),
         "latitud": lat,
