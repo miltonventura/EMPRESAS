@@ -37,15 +37,24 @@ y `deporte` de cada registro.
 
 `grupo`, `clave`, `valor`, `etiqueta_es`, `nombre`, `marca`, `operador`,
 `departamento`, `municipio`, `distrito`, `latitud`, `longitud`, `direccion`,
-`ciudad`, `telefono`, `correo`, `sitio_web`, `horario`, `cocina`, `deporte`,
-`tipo_club`, `osm_tipo`, `osm_id`, `url_osm`.
+`ciudad`, `telefono`, `correo`, `sitio_web`, `horario`, `cocina`, `cocina_es`,
+`deporte`, `deporte_es`, `tipo_club`, `tipo_club_es`, `osm_tipo`, `osm_id`,
+`url_osm`.
 
 - `valor` es el valor crudo de OSM (`supermarket`); `etiqueta_es` es su
-  traducción (`supermercado`), para que el CSV se pueda leer y filtrar en español.
+  traducción (`supermercado`), para poder leer y filtrar el CSV en español.
+  El script trae **1 108 traducciones** en 16 etiquetas (`ETIQUETAS`, dentro del
+  archivo), en español salvadoreño: `fast_food` → «comida rápida»,
+  `love_hotel` → «autohotel», `fumarole` → «fumarola (ausol)». Lo que no esté
+  traducido deja `etiqueta_es` vacío, nunca pierde el valor original.
+- Lo mismo para cocina, deporte y tipo de club, que además admiten varios
+  valores: `cuisine=pizza;burger` sale como «pizza; hamburguesas».
 - Si un lugar cae en dos grupos (un supermercado que además tiene farmacia),
   en `osm_todo.csv` aparece una sola vez con los grupos unidos por `|`.
 - `departamento`, `municipio` y `distrito` se calculan geométricamente: se bajan
-  los polígonos administrativos y se ubica cada punto dentro de ellos.
+  los polígonos administrativos y se ubica cada punto dentro de ellos. Si OSM
+  solo tiene un nivel por debajo del departamento, municipio y distrito traen
+  lo mismo.
 
 ## Uso
 
