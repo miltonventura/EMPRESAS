@@ -1,0 +1,9 @@
+.env
+datos/
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.csv
+*.xlsx
+*.geojson
