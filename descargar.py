@@ -4,12 +4,13 @@
 Descarga empresas desde OpenStreetMap para 28 distritos de El Salvador
 (AMSS y la franja costera de La Libertad).
 
-Categoria: oficinas y empresas (office=* de OpenStreetMap). Incluye
-empresas, gobierno, abogados, notarias, contadores, aseguradoras,
-inmobiliarias, tecnologia, telecomunicaciones, agencias de empleo,
-arquitectos, ingenieria, consultoria, publicidad, ONG, fundaciones,
-partidos politicos, embajadas, logistica, courier, constructoras y
-coworking.
+Categoria: comercios y tiendas (shop=* de OpenStreetMap). Incluye
+supermercados, tiendas de conveniencia, centros comerciales, tiendas por
+departamentos, panaderias, carnicerias, ropa, zapaterias, joyerias,
+farmacias, ferreterias, mueblerias, electrodomesticos, celulares,
+computadoras, venta y taller de autos, repuestos, llantas, librerias,
+papelerias, florerias, agroservicios, mascotas, lavanderias, casas de
+empeno y el resto de los ~150 valores de shop=*.
 
 Uso:   pip install requests
        python3 descargar.py
@@ -77,29 +78,27 @@ SERVIDORES = [
 # marcan el mismo tipo de negocio, y busquedas por nombre en espanol para los
 # lugares que quedaron mal etiquetados.
 CATEGORIAS = {
-    # ---- office=* : oficinas y empresas -----------------------------------
-    # Primero se pide la llave completa, asi entran de una sola vez todos los
-    # valores de office=* (company, government, lawyer, notary, accountant,
-    # insurance, estate_agent, it, telecommunication, employment_agency,
-    # architect, engineer, consulting, advertising_agency, ngo, foundation,
-    # political_party, diplomatic, logistics, courier, construction_company,
-    # coworking, etc.). Luego se agregan redes de seguridad: llaves vecinas
-    # que marcan lo mismo y busquedas por nombre para lo mal etiquetado.
-    "oficinas": [
-        'nwr["office"]',
-        # Sedes de gobierno y representaciones que OSM marca con amenity.
-        'nwr["amenity"~"^(townhall|courthouse|post_office|embassy|public_building|prosecutor)$"]',
-        'nwr["diplomatic"]',
-        'nwr["building"="office"]["name"]',
-        # Rotulos tipicos de oficinas y empresas en El Salvador.
-        'nwr["name"~"bufete|abogad|jur[ií]dic|notar[ií]a|despacho|contador|contadur[ií]a|auditor|aseguradora|seguros |correduri|inmobiliaria|bienes ra[ií]ces|consultor|asesor[ií]a|publicidad|mercadeo|agencia de|corredora|corporaci[óo]n|sociedad an[óo]nima|importadora|exportadora|comercializadora|constructora|urbanizadora|ingenier[ií]a|arquitect|tecnolog[ií]a|inform[áa]tica|software|sistemas |soluciones |desarrolladora|telecomunicaciones|empleo|recursos humanos|bolsa de trabajo|fundaci[óo]n|asociaci[óo]n|cooperativa|sindicato|partido |ministerio de|viceministerio|alcald[ií]a|embajada|consulado|c[áa]mara de|gremial|courier|encomiendas|paqueter|log[ií]stica|aduanal|coworking|call center|outsourcing",i][!"highway"][!"landuse"][!"place"][!"boundary"]',
+    # ---- shop=* : comercios y tiendas -------------------------------------
+    # Primero se pide la llave completa, asi entran de una sola vez los ~150
+    # valores de shop=*. Luego se agregan redes de seguridad: llaves vecinas
+    # que marcan comercio (una farmacia en OSM es amenity=pharmacy, no shop)
+    # y busquedas por nombre para lo mal etiquetado.
+    "comercios": [
+        'nwr["shop"]',
+        # Comercios que en OSM no viven bajo shop=*.
+        'nwr["amenity"~"^(pharmacy|marketplace|fuel|car_wash|car_rental|car_pooling|veterinary|bureau_de_change|money_transfer|internet_cafe|vehicle_inspection|driving_school|photo_booth)$"]',
+        'nwr["healthcare"~"^(pharmacy|optometrist)$"]',
+        'nwr["landuse"="retail"]["name"]',
+        'nwr["building"~"^(retail|supermarket|kiosk|commercial)$"]["name"]',
+        # Rotulos tipicos de comercio salvadoreno.
+        'nwr["name"~"supermercad|minis[úu]per|s[úu]per |despensa|abarroter|tienda|almacen|bazar|variedades|novedades|boutique|venta de|distribuidora|comercial |dep[óo]sito|agroservicio|agropecuaria|ferreter|farmacia|droguer|librer|papeler|floris|floricultur|zapater|joyer|reloger|muebler|electrodom|celulares|telefon[ií]a|computador|repuestos|autopartes|llanter|llantas|lubricentro|autolote|motos |bicicleter|lavander|tintorer|empe[ñn]o|veterinar|mascotas|panader|pasteler|reposter|carnicer|verduler|fruter|pupuser|vidrier|pintur|colchon|deportes|juguet|[óo]ptica|perfumer|cosm[ée]tic|regalos|mercadito|tiendita|gasolinera|licorer",i][!"highway"][!"landuse"][!"place"][!"boundary"]',
     ],
 }
 
 # Llave de OSM que mejor describe cada categoria; se usa para nombrar la
 # subcategoria de cada resultado (por ejemplo shop=hardware, office=lawyer).
 LLAVE_PRINCIPAL = {
-    "oficinas": ["office", "diplomatic", "amenity", "building"],
+    "comercios": ["shop", "amenity", "healthcare", "building"],
 }
 
 COLUMNAS = ["categoria", "subcategoria", "nombre", "distrito", "marca", "operador",
@@ -140,8 +139,16 @@ def consultar(consulta, etiqueta, obligatorio=True):
             r = requests.post(servidor, data={"data": consulta}, timeout=1200,
                               headers={"User-Agent": "empresas-sv/1.0"})
             if r.status_code == 200:
-                return r.json()
-            print("   %s respondio %d" % (servidor, r.status_code))
+                datos = r.json()
+                # Overpass a veces contesta 200 pero con un aviso de error en
+                # el cuerpo (por ejemplo "runtime error: Query timed out").
+                # Sin esta revision el CSV saldria vacio sin explicacion.
+                aviso = datos.get("remark", "")
+                if "error" not in aviso.lower() and "timed out" not in aviso.lower():
+                    return datos
+                print("   %s aviso: %s" % (servidor, " ".join(aviso.split())[:150]))
+            else:
+                print("   %s respondio %d" % (servidor, r.status_code))
         except Exception as exc:
             print("   %s fallo: %s" % (servidor, exc))
         espera = 10 * (2 ** intento)
