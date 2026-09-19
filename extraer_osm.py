@@ -1613,6 +1613,10 @@ class ErrorSaturacion(RuntimeError):
     """El servidor no pudo completar la consulta: hay que dividirla."""
 
 
+class ErrorDependencia(RuntimeError):
+    """Falta una libreria de Python necesaria para continuar."""
+
+
 class ClienteOverpass:
     def __init__(
         self,
@@ -1647,7 +1651,8 @@ class ClienteOverpass:
         return os.path.join(self.dir_cache, "%s.json" % clave)
 
     # -- consulta ----------------------------------------------------------- #
-    def consultar(self, ql: str, descripcion: str = "") -> Dict[str, Any]:
+    def consultar(self, ql: str, descripcion: str = "",
+                  meta: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         ruta = self._ruta_cache(ql)
         if ruta and os.path.exists(ruta):
             try:
@@ -1672,6 +1677,10 @@ class ClienteOverpass:
                 marca = (datos.get("osm3s") or {}).get("timestamp_osm_base")
                 if marca:
                     self.marca_datos_osm = str(marca)
+                # se guarda de que era la consulta, para poder reconstruir los
+                # Excel desde la cache sin volver a consultar (--solo-excel)
+                datos["_extraer_osm"] = dict(meta or {}, version=VERSION,
+                                             descripcion=descripcion)
                 if ruta:
                     with open(ruta, "w", encoding="utf-8") as fh:
                         json.dump(datos, fh, ensure_ascii=False)
@@ -1952,7 +1961,8 @@ def obtener_relacion_pais(cli: ClienteOverpass) -> int:
         'rel["boundary"="administrative"]["admin_level"="2"]["ISO3166-1"="%s"];\n'
         "out ids tags;" % (cli.timeout_consulta, PAIS_ISO)
     )
-    datos = cli.consultar(ql, "relacion de %s" % PAIS_NOMBRE)
+    datos = cli.consultar(ql, "relacion de %s" % PAIS_NOMBRE,
+                          meta={"tipo": "pais"})
     elementos = [e for e in datos.get("elements", []) if e.get("type") == "relation"]
     if not elementos:
         ql = (
@@ -1960,7 +1970,8 @@ def obtener_relacion_pais(cli: ClienteOverpass) -> int:
             'rel["boundary"="administrative"]["admin_level"="2"]["name"="%s"];\n'
             "out ids tags;" % (cli.timeout_consulta, PAIS_NOMBRE)
         )
-        datos = cli.consultar(ql, "relacion de %s (por nombre)" % PAIS_NOMBRE)
+        datos = cli.consultar(ql, "relacion de %s (por nombre)" % PAIS_NOMBRE,
+                              meta={"tipo": "pais"})
         elementos = [e for e in datos.get("elements", [])
                      if e.get("type") == "relation"]
     if not elementos:
@@ -1978,7 +1989,8 @@ def obtener_departamentos(cli: ClienteOverpass,
         'rel(area.pais)["boundary"="administrative"]["admin_level"="4"];\n'
         "out geom;" % (cli.timeout_consulta, 3600000000 + rel_pais)
     )
-    datos = cli.consultar(ql, "departamentos de %s" % PAIS_NOMBRE)
+    datos = cli.consultar(ql, "departamentos de %s" % PAIS_NOMBRE,
+                          meta={"tipo": "limites", "admin_level": 4})
     buscados = [normalizar(n) for n in nombres]
     encontrados: "OrderedDict[str, Area]" = OrderedDict()
     for el in datos.get("elements", []):
@@ -2005,7 +2017,8 @@ def obtener_departamentos(cli: ClienteOverpass,
             "(%.4f,%.4f,%.4f,%.4f);\n"
             "out geom;" % ((cli.timeout_consulta,) + PAIS_BBOX)
         )
-        datos = cli.consultar(ql, "departamentos por bbox (respaldo)")
+        datos = cli.consultar(ql, "departamentos por bbox (respaldo)",
+                              meta={"tipo": "limites", "admin_level": 4})
         for el in datos.get("elements", []):
             if el.get("type") != "relation":
                 continue
@@ -2039,7 +2052,8 @@ def obtener_unidades_internas(cli: ClienteOverpass, dep: Area) -> List[Area]:
         '["admin_level"~"^(5|6|7|8|9)$"];\n'
         "out geom;" % (cli.timeout_consulta, dep.area_overpass)
     )
-    datos = cli.consultar(ql, "municipios/distritos de %s" % dep.nombre)
+    datos = cli.consultar(ql, "municipios/distritos de %s" % dep.nombre,
+                          meta={"tipo": "limites", "departamento": dep.nombre})
     unidades: List[Area] = []
     for el in datos.get("elements", []):
         if el.get("type") != "relation":
@@ -2195,7 +2209,10 @@ def recolectar_categoria(cli: ClienteOverpass, cat: Dict[str, Any], dep: Area,
                                   "" if bbox is None else " mosaico %s" %
                                   ",".join("%.3f" % v for v in bbox))
         try:
-            datos = cli.consultar(ql, etiqueta)
+            datos = cli.consultar(ql, etiqueta, meta={
+                "tipo": "datos", "categoria": cat["clave"],
+                "departamento": dep.nombre,
+                "bbox": list(bbox) if bbox else None})
         except ErrorSaturacion as exc:
             if profundidad >= profundidad_max:
                 log("    !! no se pudo completar %s (%s). Se omite ese mosaico."
@@ -2231,7 +2248,9 @@ def contar_categoria(cli: ClienteOverpass, cat: Dict[str, Any],
     ql = construir_consulta(cat, dep.area_overpass, None, cli.timeout_consulta,
                             salida="count")
     try:
-        datos = cli.consultar(ql, "conteo %s / %s" % (cat["clave"], dep.nombre))
+        datos = cli.consultar(ql, "conteo %s / %s" % (cat["clave"], dep.nombre),
+                              meta={"tipo": "conteo", "categoria": cat["clave"],
+                                    "departamento": dep.nombre})
     except (ErrorSaturacion, ErrorOverpass):
         return None
     for el in datos.get("elements", []):
@@ -2518,6 +2537,54 @@ def escribir_resumen_general(ruta: str, resumen: List[Dict[str, Any]],
 # Proceso principal
 # --------------------------------------------------------------------------- #
 
+def verificar_openpyxl() -> None:
+    """Falla de inmediato si falta openpyxl, antes de descargar nada.
+
+    Sin esta comprobacion el script descargaba todo (dejando solo los JSON de la
+    cache) y fallaba recien al momento de escribir los Excel.
+    """
+    try:
+        import openpyxl
+        _ = openpyxl.__version__
+    except ImportError:
+        raise ErrorDependencia(
+            "falta la libreria 'openpyxl', necesaria para escribir los archivos "
+            "Excel.\n"
+            "  Instalela con:  pip install openpyxl\n"
+            "               o:  python -m pip install -r requirements.txt\n"
+            "  (si solo quiere archivos de texto, use --formato csv)")
+
+
+def informar_resultado(resumen: Sequence[Dict[str, Any]],
+                       args: argparse.Namespace) -> None:
+    """Imprime el resumen final y donde quedaron los archivos generados."""
+    total = sum(r["registros"] for r in resumen)
+    carpeta = os.path.abspath(args.salida)
+    print("")
+    print("Resumen por categoria")
+    print("-" * 66)
+    for r in resumen:
+        print("  %-18s %-34s %8d" % (r["categoria"], r["categoria_es"][:34],
+                                     r["registros"]))
+    print("-" * 66)
+    print("  %-53s %8d" % ("TOTAL", total))
+    print("")
+    extensiones = (".xlsx", ".csv") if args.formato == "ambos" else (
+        (".csv",) if args.formato == "csv" else (".xlsx",))
+    generados = sorted(f for f in os.listdir(carpeta)
+                       if f.endswith(extensiones)) if os.path.isdir(carpeta) else []
+    print("ARCHIVOS GENERADOS en %s (%d):" % (carpeta, len(generados)))
+    for nombre in generados:
+        tamano = os.path.getsize(os.path.join(carpeta, nombre)) / 1024.0
+        print("   %-46s %8.0f KB" % (nombre, tamano))
+    print("")
+    if not args.sin_cache:
+        print("Nota: los archivos .json de %s son la cache de las respuestas de "
+              "Overpass," % os.path.abspath(args.cache))
+        print("      no el resultado. Los datos finales son los .xlsx de arriba.")
+    print("Datos (c) colaboradores de OpenStreetMap, licencia ODbL 1.0.")
+
+
 def crear_cliente(args: argparse.Namespace) -> ClienteOverpass:
     """Cliente Overpass configurado con las opciones de la linea de comandos."""
     endpoints = ENDPOINTS_OVERPASS
@@ -2538,6 +2605,9 @@ def crear_cliente(args: argparse.Namespace) -> ClienteOverpass:
 def ejecutar(args: argparse.Namespace) -> int:
     silencioso = args.silencioso
     fecha = _dt.datetime.now().strftime("%Y-%m-%d %H:%M")
+
+    if args.formato in ("excel", "ambos"):
+        verificar_openpyxl()
 
     claves = args.categorias or list(CATEGORIAS.keys())
     desconocidas = [c for c in claves if c not in CATEGORIAS]
@@ -2645,21 +2715,279 @@ def ejecutar(args: argparse.Namespace) -> int:
     escribir_resumen_general(os.path.join(args.salida, "00_RESUMEN_GENERAL.xlsx"),
                              resumen, departamentos, unidades, silencioso)
 
-    total = sum(r["registros"] for r in resumen)
-    log("LISTO: %d registros en %d archivos | consultas: %d (cache: %d) | "
-        "descargado: %.1f MB"
-        % (total, len(resumen), cli.consultas_realizadas, cli.consultas_en_cache,
+    log("LISTO | consultas: %d (cache: %d) | descargado: %.1f MB"
+        % (cli.consultas_realizadas, cli.consultas_en_cache,
            cli.bytes_descargados / 1048576.0), silencioso)
-    print("")
-    print("Resumen por categoria")
-    print("-" * 58)
-    for r in resumen:
-        print("  %-18s %-34s %8d" % (r["categoria"], r["categoria_es"][:34],
-                                     r["registros"]))
-    print("-" * 58)
-    print("  %-53s %8d" % ("TOTAL", total))
-    print("")
-    print("Datos (c) colaboradores de OpenStreetMap, licencia ODbL 1.0.")
+    informar_resultado(resumen, args)
+    return 0
+
+
+# --------------------------------------------------------------------------- #
+# Reconstruccion de los Excel a partir de la cache (sin red)
+# --------------------------------------------------------------------------- #
+
+#: llaves OSM que identifican a cada categoria (para clasificar cache sin metadatos)
+LLAVES_DE_CATEGORIA: Dict[str, List[str]] = {
+    clave: list(dict.fromkeys(cat["llaves_subcat"] + [cat["llave"]]))
+    for clave, cat in CATEGORIAS.items()
+}
+
+
+def _condiciones_de_selector(selector: str) -> List[Tuple[str, Optional[str]]]:
+    """'["highway"="bus_stop"]' -> [("highway", "bus_stop")]; '["shop"]' -> [("shop", None)]."""
+    return [(llave, valor if valor else None) for llave, valor in
+            re.findall(r'\["([^"]+)"(?:="([^"]*)")?\]', selector)]
+
+
+#: condiciones de cada categoria: lista de selectores, cada uno con sus condiciones
+CONDICIONES_DE_CATEGORIA: Dict[str, List[List[Tuple[str, Optional[str]]]]] = {
+    clave: [_condiciones_de_selector(s) for s in cat["selectores"]]
+    for clave, cat in CATEGORIAS.items()
+}
+
+
+def _elemento_es_de_categoria(tags: Dict[str, str], clave: str) -> bool:
+    """True si las etiquetas satisfacen alguno de los selectores de la categoria."""
+    for condiciones in CONDICIONES_DE_CATEGORIA[clave]:
+        if condiciones and all(
+                (llave in tags) if valor is None else (tags.get(llave) == valor)
+                for llave, valor in condiciones):
+            return True
+    return False
+
+
+def _es_respuesta_de_limites(elementos: Sequence[Dict[str, Any]]) -> bool:
+    """True si la respuesta son relaciones de limites administrativos."""
+    relaciones = [e for e in elementos if e.get("type") == "relation"
+                  and e.get("members")]
+    if not relaciones or len(relaciones) < len(elementos) / 2:
+        return False
+    return any((e.get("tags") or {}).get("boundary") == "administrative"
+               for e in relaciones)
+
+
+def inferir_categoria(elementos: Sequence[Dict[str, Any]],
+                      frecuencia_llaves: Optional[Dict[str, int]] = None
+                      ) -> Optional[str]:
+    """Deduce a que categoria pertenece una respuesta guardada sin metadatos.
+
+    Toma las llaves OSM presentes en TODOS los elementos (la consulta filtro por
+    una de ellas) y, si hay varias candidatas, se queda con la menos frecuente en
+    el conjunto de la cache: la mas especifica (por ejemplo `cuisine` antes que
+    `amenity`).
+    """
+    if not elementos:
+        return None
+    # cobertura: que fraccion de los elementos encaja en los selectores de cada
+    # categoria. La consulta pidio una categoria, asi que esa los cubre a todos
+    # (una categoria como public_transport mezcla varias llaves: highway=bus_stop,
+    # public_transport=*, amenity=bus_station).
+    coincidencias: Dict[str, int] = defaultdict(int)
+    llaves_vistas: Dict[str, set] = defaultdict(set)
+    for el in elementos:
+        tags = el.get("tags") or {}
+        for clave in CATEGORIAS:
+            if _elemento_es_de_categoria(tags, clave):
+                coincidencias[clave] += 1
+                llaves_vistas[clave].update(
+                    ll for ll in LLAVES_DE_CATEGORIA[clave] if ll in tags)
+    total = len(elementos)
+    if not coincidencias:
+        return None
+    # se queda con la categoria que cubre mas elementos (normalmente todos, porque
+    # la consulta filtro por ella); si no cubre ni la mitad, no se arriesga
+    mejor = max(coincidencias.values())
+    if mejor < max(1, total // 2):
+        return None
+    candidatas = [c for c, n in coincidencias.items() if n == mejor]
+    if len(candidatas) == 1:
+        return candidatas[0]
+
+    def rareza(clave: str) -> Tuple[int, int]:
+        llaves = llaves_vistas.get(clave) or set(LLAVES_DE_CATEGORIA[clave])
+        total_llave = min((frecuencia_llaves or {}).get(ll, 0) for ll in llaves) \
+            if frecuencia_llaves else 0
+        return (total_llave, list(CATEGORIAS).index(clave))
+
+    return sorted(candidatas, key=rareza)[0]
+
+
+def leer_cache(dir_cache: str, silencioso: bool = False
+               ) -> Tuple[List[Area], List[Tuple[Dict[str, Any], List[Dict[str, Any]]]]]:
+    """Lee la cache: devuelve (areas administrativas, respuestas de datos)."""
+    import glob as _glob
+    archivos = sorted(_glob.glob(os.path.join(dir_cache, "*.json")))
+    if not archivos:
+        raise ErrorOverpass(
+            "no hay archivos JSON en la cache '%s'. Corra primero la extraccion "
+            "(sin --sin-cache) o indique la carpeta con --cache." % dir_cache)
+    log("leyendo %d archivos de cache en %s" % (len(archivos), dir_cache), silencioso)
+
+    areas: List[Area] = []
+    respuestas: List[Tuple[Dict[str, Any], List[Dict[str, Any]]]] = []
+    frecuencia: Dict[str, int] = defaultdict(int)
+    ilegibles = 0
+    for archivo in archivos:
+        try:
+            with open(archivo, "r", encoding="utf-8") as fh:
+                datos = json.load(fh)
+        except (ValueError, OSError):
+            ilegibles += 1
+            continue
+        elementos = datos.get("elements") or []
+        if not elementos:
+            continue
+        meta = dict(datos.get("_extraer_osm") or {})
+        meta["archivo"] = os.path.basename(archivo)
+        tipo = meta.get("tipo")
+        if tipo == "conteo" or any(e.get("type") == "count" for e in elementos):
+            continue
+        if tipo in ("limites", "pais") or (tipo is None
+                                           and _es_respuesta_de_limites(elementos)):
+            for el in elementos:
+                if el.get("type") != "relation":
+                    continue
+                area = area_desde_relacion(el)
+                if area is not None:
+                    areas.append(area)
+            continue
+        for el in elementos:
+            for llave in (el.get("tags") or {}):
+                frecuencia[llave] += 1
+        respuestas.append((meta, elementos))
+    if ilegibles:
+        log("  (%d archivos de cache ilegibles, omitidos)" % ilegibles, silencioso)
+
+    # clasificar las respuestas que no traen metadatos
+    for meta, elementos in respuestas:
+        if not meta.get("categoria"):
+            meta["categoria"] = inferir_categoria(elementos, frecuencia)
+            meta["categoria_inferida"] = True
+    return areas, respuestas
+
+
+def reconstruir_desde_cache(args: argparse.Namespace) -> int:
+    """Genera los Excel con los datos ya descargados en la cache, sin red."""
+    silencioso = args.silencioso
+    if args.formato in ("excel", "ambos"):
+        verificar_openpyxl()
+    fecha = _dt.datetime.now().strftime("%Y-%m-%d %H:%M")
+    areas, respuestas = leer_cache(args.cache, silencioso)
+
+    # --- limites: departamentos (nivel 4) y unidades internas (5..9) ---
+    unicas: Dict[int, Area] = {}
+    for area in areas:
+        unicas.setdefault(area.rel_id, area)
+    departamentos = [a for a in unicas.values() if a.nivel == 4]
+    if args.departamentos:
+        buscados = [normalizar(n) for n in args.departamentos]
+        filtrados = [d for d in departamentos
+                     if any(b == normalizar(d.nombre) or b in normalizar(d.nombre)
+                            or normalizar(d.nombre) in b for b in buscados)]
+        if filtrados:
+            departamentos = filtrados
+    internas = [a for a in unicas.values() if 5 <= a.nivel <= 9]
+    localizadores: Dict[str, Localizador] = {}
+    for dep in departamentos:
+        propias = [u for u in internas
+                   if dep.contiene((u.bbox[0] + u.bbox[2]) / 2.0,
+                                   (u.bbox[1] + u.bbox[3]) / 2.0)]
+        localizadores[dep.nombre] = Localizador(dep, propias)
+        log("  %s: %d unidades internas" % (dep.nombre, len(propias)), silencioso)
+    if not departamentos:
+        log("  (!) la cache no trae limites administrativos: las columnas "
+            "departamento, municipio y distrito quedaran vacias", silencioso)
+
+    def ubicar_departamento(lat: float, lon: float, sugerido: str) -> str:
+        if sugerido:
+            dep = next((d for d in departamentos if d.nombre == sugerido), None)
+            if dep is not None and dep.contiene(lat, lon):
+                return sugerido
+        for dep in departamentos:
+            if dep.contiene(lat, lon):
+                return dep.nombre
+        return sugerido
+
+    # --- agrupar los elementos por categoria ---
+    por_categoria: "OrderedDict[str, OrderedDict[Tuple[str, Any], Dict[str, Any]]]" = \
+        OrderedDict((c, OrderedDict()) for c in CATEGORIAS)
+    sin_clasificar = 0
+    sin_coordenadas = 0
+    inferidas: Dict[str, int] = defaultdict(int)
+    for meta, elementos in respuestas:
+        clave = meta.get("categoria")
+        if clave not in CATEGORIAS:
+            sin_clasificar += len(elementos)
+            continue
+        if meta.get("categoria_inferida"):
+            inferidas[clave] += 1
+        if args.categorias and clave not in args.categorias:
+            continue
+        cat = CATEGORIAS[clave]
+        for el in elementos:
+            punto = coordenadas(el)
+            if punto is None:
+                sin_coordenadas += 1
+                continue
+            nombre_dep = ubicar_departamento(punto[0], punto[1],
+                                             meta.get("departamento", ""))
+            fila = elemento_a_fila(el, cat, nombre_dep,
+                                   localizadores.get(nombre_dep), fecha)
+            if fila is None:
+                sin_coordenadas += 1
+                continue
+            por_categoria[clave][(el.get("type", ""), el.get("id"))] = fila
+
+    if inferidas:
+        log("  categorias deducidas de la cache antigua (sin metadatos): %s"
+            % ", ".join("%s (%d respuestas)" % (k, v)
+                        for k, v in sorted(inferidas.items())), silencioso)
+    if sin_clasificar:
+        log("  (%d elementos en respuestas que no se pudieron clasificar)"
+            % sin_clasificar, silencioso)
+    if sin_coordenadas:
+        log("  (%d elementos sin coordenadas omitidos)" % sin_coordenadas, silencioso)
+
+    # --- escribir un archivo por categoria con datos ---
+    os.makedirs(args.salida, exist_ok=True)
+    resumen: List[Dict[str, Any]] = []
+    for clave, filas_dict in por_categoria.items():
+        if not filas_dict:
+            continue
+        cat = CATEGORIAS[clave]
+        filas = list(filas_dict.values())
+        columnas = columnas_de_categoria(cat)
+        base = os.path.join(args.salida, cat["archivo"])
+        if args.formato in ("excel", "ambos"):
+            escribir_excel(base + ".xlsx", filas, columnas, cat, silencioso)
+        if args.formato in ("csv", "ambos"):
+            escribir_csv(base + ".csv", filas, columnas, silencioso)
+        por_municipio: Dict[Tuple[str, str], int] = defaultdict(int)
+        for f in filas:
+            por_municipio[(f["departamento"], f["municipio"])] += 1
+        resumen.append({
+            "categoria": clave,
+            "categoria_es": cat["etiqueta"],
+            "grupo": cat["grupo"],
+            "registros": len(filas),
+            "con_nombre": sum(1 for f in filas if f.get("nombre")),
+            "subcategorias": len({f.get("subcategoria", "") for f in filas}),
+            "archivo": os.path.basename(base) + (
+                ".xlsx" if args.formato != "csv" else ".csv"),
+            "por_municipio": dict(por_municipio),
+        })
+
+    if not resumen:
+        print("\nLa cache no contenia datos utilizables. Corra la extraccion "
+              "normal:\n  python extraer_osm.py", file=sys.stderr)
+        return 1
+    if args.formato in ("excel", "ambos"):
+        escribir_resumen_general(
+            os.path.join(args.salida, "00_RESUMEN_GENERAL.xlsx"),
+            resumen, departamentos,
+            {d.nombre: localizadores[d.nombre].unidades for d in departamentos},
+            silencioso)
+    informar_resultado(resumen, args)
     return 0
 
 
@@ -2803,7 +3131,7 @@ def autoprueba(dir_salida: str) -> int:
             super().__init__(dir_cache=None, pausa=0, silencioso=True)
             self.respuesta = respuesta
 
-        def consultar(self, ql, descripcion=""):
+        def consultar(self, ql, descripcion="", meta=None):
             if isinstance(self.respuesta, Exception):
                 raise self.respuesta
             return self.respuesta
@@ -2965,6 +3293,33 @@ def autoprueba(dir_salida: str) -> int:
           etiqueta_subcategoria(CATEGORIAS["cuisine"], "pizza;burger")
           == "Pizza / Hamburguesas")
 
+    # --- clasificacion de la cache (para --solo-excel) ---
+    check("deduce la categoria shop de una respuesta guardada",
+          inferir_categoria([{"type": "node", "tags": {"shop": "bakery"}},
+                             {"type": "node", "tags": {"shop": "mall",
+                                                       "name": "X"}}]) == "shop")
+    check("deduce public_transport aunque mezcle highway y public_transport",
+          inferir_categoria([
+              {"type": "node", "tags": {"highway": "bus_stop", "name": "P1"}},
+              {"type": "node", "tags": {"public_transport": "station"}},
+              {"type": "way", "tags": {"amenity": "bus_station"}}])
+          == "public_transport")
+    check("prefiere la llave mas especifica (cuisine sobre amenity)",
+          inferir_categoria(
+              [{"type": "node", "tags": {"amenity": "restaurant",
+                                         "cuisine": "pupusa"}},
+               {"type": "node", "tags": {"amenity": "fast_food",
+                                         "cuisine": "pizza"}}],
+              {"amenity": 5000, "cuisine": 300}) == "cuisine")
+    check("no adivina si nada encaja",
+          inferir_categoria([{"type": "node", "tags": {"name": "solo nombre"}}])
+          is None)
+    check("reconoce las respuestas de limites administrativos",
+          _es_respuesta_de_limites([relacion])
+          and not _es_respuesta_de_limites([nodo]))
+    check("verificar_openpyxl no falla cuando esta instalada",
+          verificar_openpyxl() is None)
+
     # --- escritura de archivos ---
     os.makedirs(dir_salida, exist_ok=True)
     cat = CATEGORIAS["shop"]
@@ -3055,6 +3410,7 @@ def construir_parser() -> argparse.ArgumentParser:
   python extraer_osm.py --categorias building --division 6 --pausa 4
   python extraer_osm.py --listar-categorias
   python extraer_osm.py --diagnostico
+  python extraer_osm.py --solo-excel          # Excel desde lo ya descargado
   python extraer_osm.py --autoprueba
 """)
     p.add_argument("--categorias", "-c", nargs="+", metavar="CLAVE",
@@ -3089,6 +3445,9 @@ def construir_parser() -> argparse.ArgumentParser:
                    help="menos mensajes en pantalla")
     p.add_argument("--listar-categorias", action="store_true",
                    help="muestra las categorias y subcategorias disponibles y sale")
+    p.add_argument("--solo-excel", action="store_true",
+                   help="no consulta nada: genera los Excel con los datos ya "
+                        "descargados en la cache (los .json de --cache)")
     p.add_argument("--diagnostico", action="store_true",
                    help="revisa el servidor y los limites, cuenta cuantos "
                         "elementos hay por categoria (sin descargarlos) y sale")
@@ -3106,6 +3465,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     if args.autoprueba:
         return autoprueba(os.path.join(args.salida, "_autoprueba"))
     try:
+        if args.solo_excel:
+            return reconstruir_desde_cache(args)
         if args.diagnostico:
             claves = args.categorias or list(CATEGORIAS.keys())
             desconocidas = [c for c in claves if c not in CATEGORIAS]
@@ -3116,6 +3477,9 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             return diagnostico(crear_cliente(args), claves, args.departamentos,
                                args.silencioso)
         return ejecutar(args)
+    except ErrorDependencia as exc:
+        print("\nFALTA UNA DEPENDENCIA: %s" % exc, file=sys.stderr)
+        return 3
     except ErrorOverpass as exc:
         print("\nERROR de Overpass: %s" % exc, file=sys.stderr)
         return 1

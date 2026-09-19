@@ -50,6 +50,7 @@ Opciones principales:
 | `--division N` | Forzar división de las consultas en N×N mosaicos |
 | `--sin-admin` | No asignar municipio/distrito (más rápido) |
 | `--diagnostico` | Verifica servidor y límites, y cuenta elementos sin descargarlos |
+| `--solo-excel` | Genera los Excel con lo ya descargado en la caché, sin consultar nada |
 | `--autoprueba` | Pruebas internas sin red |
 
 ## Categorías (21 archivos de salida)
@@ -112,8 +113,10 @@ pierda ningún dato).
 5. Un elemento que cruza el límite entre los dos departamentos se guarda **una sola vez**,
    en el departamento que contiene su punto.
 
-Las respuestas se guardan en `cache_osm/`, así que volver a correr el script (o continuar
-después de interrumpirlo con Ctrl-C) no vuelve a consultar lo ya descargado.
+Las respuestas crudas se guardan en `cache_osm/` (archivos `.json`, con metadatos de qué
+consulta produjo cada uno), así que volver a correr el script —o continuar después de
+interrumpirlo con Ctrl-C— no vuelve a consultar lo ya descargado, y `--solo-excel` puede
+rearmar los Excel desde ahí sin red.
 
 ## Tiempos y consideraciones
 
@@ -124,6 +127,35 @@ después de interrumpirlo con Ctrl-C) no vuelve a consultar lo ya descargado.
   pronto.
 * Si necesita la base completa con frecuencia, conviene montar una instancia propia de
   Overpass o usar los extractos de Geofabrik para Centroamérica y pasar `--endpoint`.
+
+## Solución de problemas
+
+### «Corrí el script y solo obtuve archivos JSON»
+
+Los `.json` de `cache_osm/` son la **caché** de las respuestas de Overpass, no el resultado.
+Los archivos finales son los `.xlsx` de `salida/`. Si no hay ninguno, la descarga terminó
+pero la escritura no llegó a ocurrir (normalmente porque faltaba `openpyxl`, o porque el
+proceso se interrumpió). No hay que volver a descargar nada:
+
+```bash
+pip install openpyxl
+python extraer_osm.py --solo-excel        # convierte la caché ya descargada en Excel
+```
+
+`--solo-excel` no usa la red: lee los `.json`, reconstruye los límites administrativos que
+haya en la caché, agrupa los elementos por categoría y escribe los mismos Excel que una
+corrida normal. Funciona también con cachés generadas por versiones anteriores del script
+(deduce la categoría de cada respuesta a partir de las etiquetas OSM y lo informa en
+pantalla). Acepta `--salida`, `--formato` y `--categorias`.
+
+Al terminar, cualquier corrida imprime la ruta absoluta de la carpeta de salida y la lista
+de archivos generados con su tamaño, para que no haya duda de dónde quedaron.
+
+### El servidor corta las consultas grandes
+
+Es normal en `building` y `landuse`: el script subdivide el área y reintenta. Si insiste,
+suba `--pausa` (por ejemplo `--pausa 5`), baje `--timeout`, o fuerce más mosaicos con
+`--division 8`. Lo ya descargado queda en la caché, así que reanudar no repite trabajo.
 
 ## Fuente y licencia de los datos
 
