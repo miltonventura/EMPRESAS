@@ -1,123 +1,101 @@
-# EMPRESAS — datos de empresas del volcán de San Salvador (OpenStreetMap)
+# EMPRESAS — registros de OpenStreetMap de San Salvador y La Libertad
 
-Descarga **nombres y ubicaciones** desde la **API Overpass** de OpenStreetMap para
-la zona del volcán de San Salvador (Quezaltepeque), El Salvador.
+Descarga registros de **OpenStreetMap** para los departamentos de **San Salvador**
+y **La Libertad** (El Salvador), con todos sus municipios y distritos, usando la
+API Overpass.
 
-Zona por defecto: círculo de **15 km** alrededor del cráter El Boquerón
-(`13.7342, -89.2864`). Cubre Santa Tecla, Nejapa, Quezaltepeque, Colón,
-Antiguo Cuscatlán y el poniente de San Salvador.
+## Qué trae
 
-## Las nueve categorías
+No son filtros hechos a mano: el script baja **todos los valores** de cada
+etiqueta de OSM pedida. Un archivo por grupo:
 
-| Categoría | Qué recoge |
-|---|---|
-| `restaurantes` | Restaurantes, comida rápida, pupuserías, comedores, marisquerías |
-| `cafeterias` | Cafeterías y tiendas de café |
-| `alimentos_bebidas` | Producción, distribución y venta: panaderías, carnicerías, lácteos, embotelladoras, cervecerías, supermercados, mayoristas, bares |
-| `salones_eventos` | Salones de eventos, banquetes, recepciones y centros de convenciones |
-| `constructoras` | Constructoras, urbanizadoras, ingenierías, oficinas de arquitectura, prefabricados |
-| `fincas_cafe` | Cafetales y fincas: `crop=coffee`, `produce=coffee`, y fincas y haciendas con nombre |
-| `beneficios_cafe` | Beneficios y despulpadoras de café |
-| `tostadurias_cafe` | Tostadurías y torrefactoras |
-| `parques_diversiones` | Parques temáticos, acuáticos, turicentros y salas de juegos |
+| Archivo | Etiqueta OSM | Contenido |
+|---|---|---|
+| `osm_comercios.csv` | `shop=*` | supermercados, tiendas, centros comerciales, panaderías, ferreterías, farmacias, repuestos, papelerías, agroservicios… (~150 valores) |
+| `osm_oficinas.csv` | `office=*` | empresas, abogados, notarías, contadores, aseguradoras, inmobiliarias, TI, ONG, constructoras, coworking |
+| `osm_talleres.csv` | `craft=*` | carpintería, electricista, plomería, herrería, sastrería, imprenta, rotulación, cervecería artesanal |
+| `osm_industria.csv` | `industrial=*` | fábricas, bodegas, refinerías, aserraderos, rastros |
+| `osm_servicios.csv` | `amenity=*` | restaurantes, cafeterías, bancos, cajeros, hospitales, clínicas, escuelas, gasolineras, mercados, iglesias, alcaldías, funerarias… |
+| `osm_ocio.csv` | `leisure=*` | parques, canchas, gimnasios, piscinas, estadios, marinas |
+| `osm_turismo.csv` | `tourism=*` | hoteles, moteles, hostales, museos, miradores, parques de diversiones |
+| `osm_clubes.csv` | `club=*` | clubes deportivos, sociales, culturales, náuticos |
+| `osm_uso_del_suelo.csv` | `landuse=*` | zonas comerciales, industriales, residenciales, cultivos, bosques, canteras |
+| `osm_lugares.csv` | `place=*` | ciudades, pueblos, cantones, caseríos, colonias, barrios |
+| `osm_naturales.csv` | `natural=*` | playas, volcanes, cerros, manglares, manantiales |
+| `osm_historicos.csv` | `historic=*` | monumentos, ruinas, sitios arqueológicos |
+| `osm_infraestructura.csv` | `man_made=*` | torres, antenas, tanques de agua, muelles, faros, silos |
+| `osm_edificios.csv` | `building=*` | edificios (ver la nota de volumen más abajo) |
 
-Cada categoría busca **por etiqueta formal de OSM y también por nombre**, porque en
-El Salvador mucho está mapeado sin la etiqueta correcta. Los hallazgos que salieron
-solo por el nombre se marcan como `sin_clasificar` en la columna `subcategoria`;
-revísalos, ahí es donde se cuela el ruido.
+Más `osm_todo.csv` con todo junto sin duplicados, y `osm_todo.geojson` para mapas.
 
-Un mismo lugar puede caer en dos categorías (una finca que además tiene beneficio).
-En los archivos por categoría aparece en las dos; en `empresas_todas.csv` sale una
-sola vez, con la columna `categoria` uniéndolas con `|`.
+**La marca, el tipo de cocina y el deporte no son grupos aparte**, porque en OSM
+no son categorías sino atributos de otra cosa: un `brand=Pollo Campero` siempre
+va encima de un `amenity=fast_food`. Viajan como las columnas `marca`, `cocina`
+y `deporte` de cada registro.
 
-## Opción A — script (deja CSV + GeoJSON)
+## Columnas
 
-```bash
-pip install -r requirements.txt
-python3 overpass_empresas.py
-```
+`grupo`, `clave`, `valor`, `etiqueta_es`, `nombre`, `marca`, `operador`,
+`departamento`, `municipio`, `distrito`, `latitud`, `longitud`, `direccion`,
+`ciudad`, `telefono`, `correo`, `sitio_web`, `horario`, `cocina`, `deporte`,
+`tipo_club`, `osm_tipo`, `osm_id`, `url_osm`.
 
-Genera en `datos/`:
+- `valor` es el valor crudo de OSM (`supermarket`); `etiqueta_es` es su
+  traducción (`supermercado`), para que el CSV se pueda leer y filtrar en español.
+- Si un lugar cae en dos grupos (un supermercado que además tiene farmacia),
+  en `osm_todo.csv` aparece una sola vez con los grupos unidos por `|`.
+- `departamento`, `municipio` y `distrito` se calculan geométricamente: se bajan
+  los polígonos administrativos y se ubica cada punto dentro de ellos.
 
-- un CSV por categoría: `empresas_restaurantes.csv`, `empresas_cafeterias.csv`, etc.
-
-- `empresas_todas.csv` — todo junto, sin duplicados (si un lugar cae en dos
-  categorías, la columna `categoria` las une con `|`)
-- `empresas.geojson` — para QGIS, Google My Maps, Kepler.gl o geojson.io
-
-Columnas: categoría, subcategoría, nombre, marca, operador, latitud, longitud,
-tipo e id de OSM, enlace al elemento, dirección, ciudad, teléfono, correo,
-sitio web, facebook, horario, producto/cocina y descripción.
-
-### Variantes útiles
+## Uso
 
 ```bash
-# Radio más amplio (25 km)
-python3 overpass_empresas.py --radio 25000
-
-# Solo una categoría
-python3 overpass_empresas.py --categorias cafe
-
-# Rectángulo en vez de círculo: sur oeste norte este
-python3 overpass_empresas.py --bbox 13.60 -89.45 13.90 -89.15
-
-# Otro centro (por ejemplo el casco de Santa Tecla)
-python3 overpass_empresas.py --lat 13.6731 --lon -89.2797 --radio 8000
-
-# Ver las consultas sin descargar nada
-python3 overpass_empresas.py --solo-consulta
-
-# Guardar también la respuesta original de Overpass
-python3 overpass_empresas.py --guardar-json datos/crudo
+pip install requests
+python3 descargar.py
 ```
 
-El script reintenta con espera creciente y rota entre tres servidores Overpass
-(`overpass-api.de`, `kumi.systems`, `private.coffee`) si uno está saturado.
+### Ajustes, al inicio del archivo
 
-## Opción B — sin programar, en el navegador
+- `DEPARTAMENTOS` — la lista de departamentos. El script descubre solo sus
+  municipios y distritos; no hay que enumerarlos.
+- `GRUPOS` — comenta con `#` la línea de un grupo que no quieras bajar.
+- `EDIFICIOS_COMPLETOS` — ver abajo.
+- `CARPETA` — dónde se guardan los resultados.
 
-1. Abrir <https://overpass-turbo.eu>
-2. Pegar el contenido de `consultas/restaurantes.overpassql` (hay uno por
-   categoría, ya delimitados a los 28 distritos)
-3. **Ejecutar** → **Exportar** → *GeoJSON*, *CSV* o *GPX*
+Los límites administrativos se guardan en `datos/_limites.json` para no volver a
+descargarlos. **Bórralo si cambias `DEPARTAMENTOS`.**
 
-## Opción C — QGIS
+## Volumen: lee esto antes de correrlo
 
-Complemento **QuickOSM**: pestaña *Consulta* y pegar los mismos `.overpassql`,
-con la extensión centrada en el volcán.
+Esto ya no es una consulta pequeña. Dos departamentos enteros y catorce
+etiquetas completas pueden ser **cientos de miles de registros** y **una o
+varias horas** de descarga.
 
-## Notas importantes
+- **Los edificios son el grupo más grande con diferencia.** Con
+  `EDIFICIOS_COMPLETOS = False` (el valor por defecto) se traen solo los
+  edificios con nombre o de uso no residencial, que es lo útil para un censo de
+  negocios. En `True` se trae cada casa mapeada: decenas o cientos de miles de
+  polígonos que Excel ya no abre cómodamente.
+- **El script parte el área solo.** Primero intenta la consulta completa; si el
+  servidor no puede, la reparte por municipios, y si tampoco, por distritos. Los
+  edificios arrancan directamente distrito por distrito.
+- **El GeoJSON combinado se omite** si el total pasa de 200 000 registros
+  (`LIMITE_GEOJSON`); los CSV siempre se escriben.
+- Es un servidor público y gratuito: no lo corras en bucle.
 
-- **La cobertura depende de lo que la comunidad haya mapeado.** Restaurantes,
-  cafeterías y comercios de alimentos salen bastante completos en San Salvador,
-  Antiguo Cuscatlán y Santa Tecla. Constructoras, salones de eventos, beneficios y
-  tostadurías están muy sub-mapeados: espera pocos resultados, y buena parte
-  vendrá de la búsqueda por nombre (`subcategoria` = `sin_clasificar`). Los
-  cafetales aparecen como polígonos grandes, muchos sin razón social.
-- Para un padrón *formal* de empresas complementa con el Directorio de Unidades
-  Económicas (BCR/DIGESTYC) o el Registro de Comercio del CNR; OSM no es un
-  registro mercantil.
+## Sin programar, en el navegador
+
+En `consultas/` hay un `.overpassql` por grupo, ya delimitado a los dos
+departamentos. Se pegan en <https://overpass-turbo.eu> → **Ejecutar** →
+**Exportar**. Para las etiquetas grandes conviene reducir antes el área.
+
+## Notas
+
+- **La cobertura es la que tenga OpenStreetMap.** Comercios y servicios están
+  razonablemente completos en San Salvador, Antiguo Cuscatlán y Santa Tecla, y
+  escasos en el resto. Oficinas, talleres e industria están sub-mapeados en todo
+  el país. OSM no es un registro mercantil: para un padrón formal, cruza con el
+  Registro de Comercio (CNR) o el directorio de unidades económicas del BCR.
 - Datos © colaboradores de OpenStreetMap, licencia **ODbL**: al publicar o
   redistribuir hay que atribuir y compartir bajo la misma licencia.
   <https://www.openstreetmap.org/copyright>
-- Sé considerado con la API pública de Overpass: no lances la descarga en bucle.
-
-## Script de un solo archivo
-
-`descargar.py` es la versión copia-y-pega: sin argumentos ni opciones, se corre con
-`python3 descargar.py`.
-
-**Su área de búsqueda son 28 distritos** (el AMSS completo más la franja costera de
-La Libertad), no el círculo de 15 km: San Salvador, Ayutuxtepeque, Mejicanos,
-Cuscatancingo, Ciudad Delgado, Apopa, Nejapa, Ilopango, San Martín, Soyapango,
-Tonacatepeque, San Marcos, Panchimalco, Rosario de Mora, Santiago Texacuangos,
-Santo Tomás, Antiguo Cuscatlán, Huizúcar, Nuevo Cuscatlán, San José Villanueva,
-Zaragoza, Chiltiupán, Jicalapa, La Libertad, Tamanique, Teotepeque, Santa Tecla
-y Comasagua. La lista se edita en `DISTRITOS`, al inicio del archivo.
-
-Usa las fronteras administrativas reales de OpenStreetMap, avisa si algún distrito
-no aparece en OSM, y **etiqueta cada resultado con el distrito donde cae** (columna
-`distrito`). Las fronteras se guardan en `datos/_distritos.json` para no volver a
-descargarlas; bórralo si cambias la lista de distritos.
-
-`overpass_empresas.py` sigue trabajando por radio y con opciones de línea de comandos.
