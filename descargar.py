@@ -199,23 +199,32 @@ def nivel_de(tags):
 def armar_limites(datos):
     """Convierte cada limite en segmentos agrupados por bandas de latitud.
 
-    Devuelve la lista ordenada de lo general a lo particular: departamento
-    primero, luego municipio, luego distrito.
+    Descarta los limites de departamentos vecinos que Overpass arrastra por
+    tocar la frontera: se quedan solo los que tienen su centro dentro de los
+    departamentos pedidos. Devuelve la lista ordenada de lo general a lo
+    particular: departamento, luego municipio, luego distrito.
     """
-    limites, vistos = [], set()
+    poligonos, vistos = [], set()
     for relacion in datos.get("elements", []):
         tags = relacion.get("tags", {})
         nombre = tags.get("name", "")
-        nivel = nivel_de(tags)
-        if not nombre or (nombre, nivel) in vistos:
+        identificador = relacion.get("id")
+        # Se deduplica por id, no por nombre: dos distritos distintos pueden
+        # llamarse igual y perder uno dejaria un hueco sin consultar.
+        if not nombre or identificador in vistos:
             continue
-        vistos.add((nombre, nivel))
+        vistos.add(identificador)
 
         rejilla = collections.defaultdict(list)
+        suma_lat = suma_lon = puntos_total = 0
         for miembro in relacion.get("members", []):
             if miembro.get("role") == "label":
                 continue
             puntos = miembro.get("geometry") or []
+            for punto in puntos:
+                suma_lat += punto["lat"]
+                suma_lon += punto["lon"]
+                puntos_total += 1
             for a, b in zip(puntos, puntos[1:]):
                 if a["lat"] == b["lat"]:
                     continue   # los segmentos horizontales no cruzan el rayo
@@ -224,9 +233,26 @@ def armar_limites(datos):
                 hasta = int(max(a["lat"], b["lat"]) / PASO_REJILLA)
                 for banda in range(desde, hasta + 1):
                     rejilla[banda].append(segmento)
-        if rejilla:
-            limites.append({"nivel": nivel, "nombre": nombre,
-                            "id": relacion.get("id"), "rejilla": dict(rejilla)})
+        if not rejilla or not puntos_total:
+            continue
+        poligonos.append({"nivel": nivel_de(tags), "nombre": nombre,
+                          "id": identificador, "rejilla": dict(rejilla),
+                          "centro": (suma_lat / puntos_total, suma_lon / puntos_total)})
+
+    departamentos = [p for p in poligonos if p["nivel"] <= 4]
+    internos, ajenos = [], 0
+    for poligono in poligonos:
+        if poligono in departamentos:
+            continue
+        lat, lon = poligono["centro"]
+        if any(contiene(lat, lon, d["rejilla"]) for d in departamentos):
+            internos.append(poligono)
+        else:
+            ajenos += 1
+    if ajenos:
+        print("  (se descartaron %d limites de departamentos vecinos)" % ajenos)
+
+    limites = departamentos + internos
     limites.sort(key=lambda l: (l["nivel"], l["nombre"]))
     return limites
 
