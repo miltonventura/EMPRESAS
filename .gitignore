@@ -1,0 +1,4 @@
+# La carpeta shapefile se versiona comprimida (salida/shapefile_*.zip)
+salida/shapefile/
+__pycache__/
+*.pyc
