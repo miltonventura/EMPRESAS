@@ -1,46 +1,74 @@
-# EMPRESAS — descarga de OpenStreetMap por categoria
+# EMPRESAS — descarga de OpenStreetMap por distrito y categoria
 
-Scripts para consultar y descargar los datos de OpenStreetMap del distrito de
-**San Salvador**, El Salvador, una categoria por archivo.
+Scripts para consultar y descargar los datos de OpenStreetMap de 8 distritos de
+El Salvador, **un archivo por categoria y por distrito** (18 x 8 = 144
+archivos).
 
-Todos los archivos son independientes y comparten la misma estructura: bajan la
-frontera del distrito (y la guardan en cache), consultan Overpass dentro de esa
-area y dejan los resultados en la carpeta `datos/`, en CSV y GeoJSON, con las
-mismas columnas en todos los casos.
+Todos comparten la misma estructura: bajan la frontera del distrito (y la
+guardan en cache), consultan Overpass dentro de esa area y dejan los resultados
+en la carpeta `datos/`, en CSV y GeoJSON, con las mismas columnas en todos los
+casos.
 
 ## Uso
 
 ```bash
 pip install requests
+cd san_salvador
 python3 descargar_shop_san_salvador.py
 ```
 
-Cada archivo se corre por su cuenta. La frontera del distrito se descarga una
-sola vez: el primero que se corra deja `datos/_frontera_san_salvador.json` y los
-demas la reutilizan.
+Cada archivo se corre por su cuenta y tarda alrededor de un minuto. Conviene
+correrlos parado dentro de la carpeta del distrito: los resultados quedan en
+`<distrito>/datos/` y la frontera se descarga una sola vez, porque el primero
+que se corra deja `datos/_frontera_<distrito>.json` y los otros 17 la
+reutilizan.
+
+## Distritos
+
+| Carpeta | Distrito | Como puede estar escrito en OpenStreetMap |
+|---|---|---|
+| `san_salvador/`   | San Salvador   | San Salvador |
+| `santa_tecla/`    | Santa Tecla    | Santa Tecla **o** Nueva San Salvador |
+| `quezaltepeque/`  | Quezaltepeque  | Quezaltepeque |
+| `san_juan_opico/` | San Juan Opico | San Juan Opico **o** Opico |
+| `colon/`          | Colón          | Colón **o** Colon |
+| `mejicanos/`      | Mejicanos      | Mejicanos |
+| `ayutuxtepeque/`  | Ayutuxtepeque  | Ayutuxtepeque |
+| `nejapa/`         | Nejapa         | Nejapa |
+
+Cada script busca la frontera por nombre dentro de un recuadro (`BBOX_BUSQUEDA`)
+ajustado a los alrededores de su distrito, no a todo el pais: **Quezaltepeque** y
+**Colón** son tambien municipios de Guatemala y Honduras, y con un recuadro
+grande Overpass podria devolver la frontera equivocada. Si el nombre llega a
+coincidir con mas de una frontera, el script lo avisa y muestra las candidatas
+antes de seguir.
 
 ## Categorias
 
+Las 18 categorias estan en las 8 carpetas, con el nombre del distrito al final
+del archivo. Por ejemplo, en `santa_tecla/` el de comercios es
+`descargar_shop_santa_tecla.py`.
+
 | Archivo | Llave de OSM | Salida en `datos/` |
 |---|---|---|
-| `descargar_shop_san_salvador.py`       | `shop`       | `comercios_san_salvador.csv` |
-| `descargar_office_san_salvador.py`     | `office`     | `oficinas_san_salvador.csv` |
-| `descargar_craft_san_salvador.py`      | `craft`      | `oficios_san_salvador.csv` |
-| `descargar_brand_san_salvador.py`      | `brand`      | `marcas_san_salvador.csv` |
-| `descargar_industrial_san_salvador.py` | `industrial` | `industrias_san_salvador.csv` |
-| `descargar_amenity_san_salvador.py`    | `amenity`    | `servicios_san_salvador.csv` |
-| `descargar_leisure_san_salvador.py`    | `leisure`    | `recreacion_san_salvador.csv` |
-| `descargar_tourism_san_salvador.py`    | `tourism`    | `turismo_san_salvador.csv` |
-| `descargar_sport_san_salvador.py`      | `sport`      | `deportes_san_salvador.csv` |
-| `descargar_cuisine_san_salvador.py`    | `cuisine`    | `gastronomia_san_salvador.csv` |
-| `descargar_club_san_salvador.py`       | `club`       | `clubes_san_salvador.csv` |
-| `descargar_healthcare_san_salvador.py` | `healthcare` | `salud_san_salvador.csv` |
-| `descargar_building_san_salvador.py`   | `building`   | `edificaciones_san_salvador.csv` |
-| `descargar_landuse_san_salvador.py`    | `landuse`    | `usos_de_suelo_san_salvador.csv` |
-| `descargar_place_san_salvador.py`      | `place`      | `lugares_san_salvador.csv` |
-| `descargar_natural_san_salvador.py`    | `natural`    | `naturaleza_san_salvador.csv` |
-| `descargar_historic_san_salvador.py`   | `historic`   | `patrimonio_san_salvador.csv` |
-| `descargar_man_made_san_salvador.py`   | `man_made`   | `infraestructura_san_salvador.csv` |
+| `descargar_shop_*.py`       | `shop`       | `comercios_*.csv` |
+| `descargar_office_*.py`     | `office`     | `oficinas_*.csv` |
+| `descargar_craft_*.py`      | `craft`      | `oficios_*.csv` |
+| `descargar_brand_*.py`      | `brand`      | `marcas_*.csv` |
+| `descargar_industrial_*.py` | `industrial` | `industrias_*.csv` |
+| `descargar_amenity_*.py`    | `amenity`    | `servicios_*.csv` |
+| `descargar_leisure_*.py`    | `leisure`    | `recreacion_*.csv` |
+| `descargar_tourism_*.py`    | `tourism`    | `turismo_*.csv` |
+| `descargar_sport_*.py`      | `sport`      | `deportes_*.csv` |
+| `descargar_cuisine_*.py`    | `cuisine`    | `gastronomia_*.csv` |
+| `descargar_club_*.py`       | `club`       | `clubes_*.csv` |
+| `descargar_healthcare_*.py` | `healthcare` | `salud_*.csv` |
+| `descargar_building_*.py`   | `building`   | `edificaciones_*.csv` |
+| `descargar_landuse_*.py`    | `landuse`    | `usos_de_suelo_*.csv` |
+| `descargar_place_*.py`      | `place`      | `lugares_*.csv` |
+| `descargar_natural_*.py`    | `natural`    | `naturaleza_*.csv` |
+| `descargar_historic_*.py`   | `historic`   | `patrimonio_*.csv` |
+| `descargar_man_made_*.py`   | `man_made`   | `infraestructura_*.csv` |
 
 Junto a cada CSV queda un `.geojson` con los mismos registros, listo para abrir
 en QGIS o en umap.
@@ -63,9 +91,9 @@ lo que si trajo.
 ## Notas por categoria
 
 - **building**: baja los edificios con nombre y los que declaran un uso no
-  residencial. Descargar *todos* los edificios del distrito (decenas de miles
-  de casas sin nombre) hace que la consulta se pase del tiempo limite; el
-  encabezado del archivo explica como forzarlo si de verdad se necesita.
+  residencial. Descargar *todos* los edificios (decenas de miles de casas sin
+  nombre) hace que la consulta se pase del tiempo limite; el encabezado del
+  archivo explica como forzarlo si de verdad se necesita.
 - **place**: en El Salvador muchas colonias estan mapeadas como
   `landuse=residential` con nombre en vez de `place=*`, asi que tambien se
   piden esas.
@@ -86,20 +114,30 @@ lo que si trajo.
 (`shop=bakery`, `amenity=restaurant`, ...), dando prioridad a la llave de la
 categoria que se esta bajando.
 
-Como las columnas son iguales en todos los archivos, los CSV se pueden unir:
+Como las columnas son iguales en todos los archivos, los CSV se pueden unir.
+Dentro de un distrito:
 
 ```bash
 head -1 datos/comercios_san_salvador.csv >  datos/todos.csv
 tail -q -n +2 datos/*_san_salvador.csv   >> datos/todos.csv
 ```
 
+O los 8 distritos de una vez, desde la raiz del repositorio:
+
+```bash
+head -1 san_salvador/datos/comercios_san_salvador.csv >  todos.csv
+tail -q -n +2 */datos/*_*.csv | grep -v '^categoria,' >> todos.csv
+```
+
 ## Otro distrito
 
-En cada script, el bloque `DISTRITO` de arriba es lo unico que hay que cambiar:
+Para agregar uno nuevo, se copia cualquier carpeta y se cambian las tres lineas
+de arriba de cada script:
 
 ```python
-DISTRITO = "San Salvador"   # como queda escrito en el CSV y en los archivos
-PATRON = "San Salvador"     # variantes del nombre en OpenStreetMap
+DISTRITO = "San Salvador"                      # como queda escrito en el CSV
+PATRON = "San Salvador"                        # variantes del nombre en OSM
+BBOX_BUSQUEDA = "13.55,-89.40,13.90,-89.05"    # sur,oeste,norte,este
 ```
 
 ---
