@@ -874,7 +874,7 @@ textarea{resize:vertical; font-size:14px}
         startImport(sheetRows(wb, wb.SheetNames[0]), file.name, wb);
       } else {
         let text = await readText(file, 'utf-8');
-        if (text.includes('�')) text = await readText(file, 'windows-1252'); // CSV guardado por Excel en Windows
+        if (text.includes('\uFFFD')) text = await readText(file, 'windows-1252'); // CSV guardado por Excel en Windows
         startImport(parseDelimited(text), file.name, null);
       }
     } catch (err) {
