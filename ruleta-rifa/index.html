@@ -247,7 +247,7 @@ textarea{resize:vertical; font-size:14px}
       </div>
 
       <div class="tabpanel" role="tabpanel" id="panel-load" aria-labelledby="tab-load">
-        <p class="note" id="sampleNote">La ruleta tiene 24 asistentes de ejemplo. Carga tu lista para reemplazarlos.</p>
+        <p class="note" id="emptyNote">La ruleta está vacía. Carga el archivo de Excel o CSV con los asistentes para empezar.</p>
         <div class="drop" id="drop">
           <p class="drop-title">Arrastra aquí la base de datos de asistentes</p>
           <p class="muted small">CSV, TXT o Excel (.xlsx, .xls, .ods). Una fila por asistente.</p>
@@ -322,27 +322,15 @@ textarea{resize:vertical; font-size:14px}
   ];
   const RIM = '#0E2428';
 
-  const SAMPLE = [
-    ['Valentina Ríos', 'Estudio Lumen'], ['Mateo Herrera', 'Ferretería El Norte'], ['Camila Duarte', 'Café Altamira'],
-    ['Santiago Pardo', 'Constructora Andina'], ['Isabella Moreno', 'Clínica San Rafael'], ['Sebastián Castaño', 'Transportes Ruta 9'],
-    ['Mariana Ospina', 'Panadería La Espiga'], ['Nicolás Vega', 'Agencia Faro'], ['Daniela Rojas', 'Colegio Los Pinos'],
-    ['Samuel Quintero', 'Taller Mecánico Díaz'], ['Gabriela Salazar', 'Floristería Aurora'], ['Tomás Mejía', 'Imprenta Central'],
-    ['Luciana Cárdenas', 'Óptica Visión Clara'], ['Emilio Navarro', 'Consultores Nexo'], ['Sofía Arango', 'Hotel Mirador'],
-    ['Joaquín Beltrán', 'Distribuidora Sur'], ['Antonella Giraldo', 'Gimnasio Impulso'], ['Martín Cifuentes', 'Librería Páginas'],
-    ['Renata Villalobos', 'Veterinaria Huellas'], ['Julián Serrano', 'Laboratorio Ámbar'], ['Paula Montoya', 'Restaurante El Fogón'],
-    ['Andrés Palacios', 'Seguros Horizonte'], ['Ximena León', 'Estudio Contable Paz'], ['Diego Ramírez', 'Viveros La Pradera']
-  ];
-
   // ---------- Estado ----------
   function defaultState() {
     return {
       event: 'Rifa de fin de año',
-      participants: SAMPLE.map((r, i) => ({ id: i + 1, name: r[0], extra: r[1] })),
+      participants: [],  // vacía hasta que se cargue la lista de asistentes
       out: {},          // id -> 'won' | 'absent' | 'removed'
       winners: [],      // {pid, name, extra, prize, at, status:'won'|'absent'}
       removeWinner: true,
       sound: true,
-      isSample: true,
       rot: 0
     };
   }
@@ -352,6 +340,8 @@ textarea{resize:vertical; font-size:14px}
       if (!raw) return null;
       const d = JSON.parse(raw);
       if (!d || !Array.isArray(d.participants)) return null;
+      if (d.isSample) { d.participants = []; d.out = {}; d.winners = []; } // versión anterior con datos de ejemplo
+      delete d.isSample;
       return Object.assign(defaultState(), d);
     } catch (e) { return null; }
   }
@@ -418,7 +408,13 @@ textarea{resize:vertical; font-size:14px}
     g.beginPath(); g.arc(c, c, R, 0, TAU); g.fillStyle = RIM; g.fill();
 
     if (n === 0) {
-      g.beginPath(); g.arc(c, c, r, 0, TAU); g.fillStyle = '#1B3A40'; g.fill();
+      const k = 12, seg = TAU / k;
+      g.globalAlpha = 0.35;
+      for (let i = 0; i < k; i++) {
+        g.beginPath(); g.moveTo(c, c); g.arc(c, c, r, i * seg, (i + 1) * seg + 0.003); g.closePath();
+        g.fillStyle = SEG[i % SEG.length][0]; g.fill();
+      }
+      g.globalAlpha = 1;
     } else {
       const seg = TAU / n;
       for (let i = 0; i < n; i++) {
@@ -491,14 +487,19 @@ textarea{resize:vertical; font-size:14px}
     const id = p ? p.id : -1;
     if (id === lastReadId) return;
     lastReadId = id;
-    $('#curName').textContent = p ? p.name : 'Nadie en la ruleta';
-    $('#curExtra').textContent = p ? p.extra : 'Carga una lista o reinicia la rifa.';
+    const noList = !S.participants.length;
+    $('#curName').textContent = p ? p.name : (noList ? 'Sin participantes' : 'Nadie en la ruleta');
+    $('#curExtra').textContent = p ? p.extra : (noList ? 'Carga la lista de asistentes para empezar.' : 'Reinicia la rifa para volver a incluir a todos.');
   }
 
   function spin() {
     if (spinning || modalOpen) return;
     const n = pool.length;
-    if (!n) { toast('No queda nadie en la ruleta. Carga una lista o reinicia la rifa.'); return; }
+    if (!n) {
+      if (!S.participants.length) { toast('Primero carga el archivo con los asistentes.'); selectTab($('#tab-load')); }
+      else toast('No queda nadie en la ruleta. Reinicia la rifa o carga otra lista.');
+      return;
+    }
     initAudio();
     const seg = TAU / n;
     const w = randInt(n);
@@ -693,7 +694,7 @@ textarea{resize:vertical; font-size:14px}
     $('#stWon').textContent = fmt(wonCount());
     $('#stTotal').textContent = fmt(S.participants.length);
     $('#tabWonCount').textContent = fmt(wonCount());
-    $('#sampleNote').hidden = !S.isSample;
+    $('#emptyNote').hidden = S.participants.length > 0;
   }
 
   const LIMIT = 400;
@@ -1019,7 +1020,7 @@ textarea{resize:vertical; font-size:14px}
     const apply = () => {
       const { list } = buildFromImport();
       S.participants = list.map((p, i) => ({ id: i + 1, name: p.name, extra: p.extra }));
-      S.out = {}; S.winners = []; S.isSample = false;
+      S.out = {}; S.winners = [];
       imp = null;
       $('#impBox').hidden = true; $('#impSheet').replaceChildren(); $('#file').value = ''; $('#pasteBox').value = '';
       commit();

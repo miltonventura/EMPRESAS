@@ -14,5 +14,6 @@ Aplicación de una sola página para sortear premios entre los asistentes de un 
 - Los datos no salen del navegador; la rifa se guarda en el equipo para no perderla si se recarga la página.
 - En la pestaña **Ganadores** se puede copiar la lista para pegarla en Excel, deshacer el último sorteo o reiniciar la rifa.
 - **Pantalla completa** muestra solo la ruleta, ideal para proyectar.
+- La ruleta empieza vacía: no muestra ningún nombre hasta que se carga la lista de asistentes.
 
 `ruleta-rifa/ejemplo-asistentes.csv` es un archivo de prueba con el formato esperado.
