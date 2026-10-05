@@ -10,7 +10,7 @@ de los otros distritos (`descargar_<categoria>_<distrito>.py`).
 ```bash
 pip install requests
 cd apopa
-python3 descargar_shop_apopa.py
+python3 correr_todo_apopa.py      # corre las 18 categorias y las une en datos/todos_apopa.csv
 ```
 
 Los resultados quedan en `apopa/datos/` como `<categoria>_apopa.csv` y
