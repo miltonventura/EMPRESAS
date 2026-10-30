@@ -1,0 +1,23 @@
+{% extends 'base.html' %}
+{% block titulo %}Usuarios{% endblock %}
+{% block contenido %}
+<div class="encabezado">
+  <h1>Personal de la clínica</h1>
+  <a class="boton" href="{{ url_for('auth.usuario_nuevo') }}">Nuevo usuario</a>
+</div>
+<div class="tarjeta tabla-scroll">
+  <table>
+    <thead><tr><th>Nombre</th><th>Usuario</th><th>Rol</th><th>Especialidad</th><th>Estado</th><th></th></tr></thead>
+    <tbody>
+    {% for u in usuarios %}
+      <tr>
+        <td>{{ u.nombre }}</td><td>{{ u.usuario }}</td><td>{{ catalogos.ROLES[u.rol] }}</td>
+        <td>{{ u.especialidad or '—' }}</td>
+        <td>{% if u.activo %}<span class="etiqueta estado-atendida">Activo</span>{% else %}<span class="etiqueta">Inactivo</span>{% endif %}</td>
+        <td><a href="{{ url_for('auth.usuario_editar', usuario_id=u.id) }}">Editar</a></td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

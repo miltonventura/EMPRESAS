@@ -1,0 +1,35 @@
+{% extends 'base.html' %}
+{% from 'macros.html' import csrf %}
+{% block titulo %}Encuesta de satisfacción{% endblock %}
+{% block contenido %}
+<div class="encuesta">
+  <div class="tarjeta">
+    <h1>{{ nombre_clinica() }}</h1>
+    <p>Estimado(a) {{ encuesta.paciente.split(' ')[0] }}, gracias por su visita de {{ encuesta.especialidad }} del {{ encuesta.fecha_hora|fecha }}{% if encuesta.medico %} con {{ encuesta.medico }}{% endif %}.
+      Su opinión nos ayuda a mejorar. Toma menos de un minuto.</p>
+  </div>
+  <form method="post" class="tarjeta">
+    {{ csrf() }}
+    {% for campo, etiqueta, opcional in catalogos.PREGUNTAS_ENCUESTA %}
+      <fieldset style="border:none;padding:0;margin:0">
+        <legend class="{{ '' if opcional else 'obligatorio' }}">{{ etiqueta }}</legend>
+        <div class="escala">
+          {% for valor, texto in catalogos.ESCALA.items() %}
+            <label><input type="radio" name="{{ campo }}" value="{{ valor }}" {{ 'checked' if form.get(campo) == valor|string }} {{ '' if opcional else 'required' }}> {{ valor }} · {{ texto }}</label>
+          {% endfor %}
+          {% if opcional %}<label><input type="radio" name="{{ campo }}" value="na" {{ 'checked' if form.get(campo) == 'na' }}> No aplica</label>{% endif %}
+        </div>
+      </fieldset>
+    {% endfor %}
+    <fieldset style="border:none;padding:0;margin:0">
+      <legend class="obligatorio">Del 0 al 10, ¿qué tan probable es que recomiende la clínica a un familiar o amigo?</legend>
+      <div class="escala">
+        {% for n in range(11) %}<label><input type="radio" name="nps" value="{{ n }}" {{ 'checked' if form.get('nps') == n|string }} required> {{ n }}</label>{% endfor %}
+      </div>
+    </fieldset>
+    <label for="comentarios">Comentarios o sugerencias (opcional)</label>
+    <textarea id="comentarios" name="comentarios" maxlength="2000">{{ form.get('comentarios') or '' }}</textarea>
+    <p><button>Enviar respuestas</button></p>
+  </form>
+</div>
+{% endblock %}

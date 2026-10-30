@@ -1,0 +1,19 @@
+{% extends 'base.html' %}
+{% from 'macros.html' import csrf, campo, lista, casilla %}
+{% block titulo %}{{ 'Editar usuario' if u else 'Nuevo usuario' }}{% endblock %}
+{% block contenido %}
+<h1>{{ 'Editar usuario: ' ~ u.usuario if u else 'Nuevo usuario' }}</h1>
+<form method="post" class="tarjeta">
+  {{ csrf() }}
+  <div class="rejilla">
+    {{ campo(form, 'nombre', 'Nombre completo', obligatorio=true) }}
+    {% if not u %}{{ campo(form, 'usuario', 'Usuario', obligatorio=true) }}{% endif %}
+    {{ lista(form, 'rol', 'Rol', catalogos.ROLES.items(), obligatorio=true) }}
+    <div data-mostrar-si="rol=medico">{{ lista(form, 'especialidad', 'Especialidad', catalogos.ESPECIALIDADES) }}</div>
+    {{ campo({}, 'password', 'Contraseña' if not u else 'Nueva contraseña', tipo='password', obligatorio=not u,
+             ayuda='Mínimo 8 caracteres.' if not u else 'Déjela en blanco para conservar la actual.', extra='autocomplete="new-password"') }}
+    {% if u %}<div>{{ casilla(form, 'activo', 'Usuario activo') }}</div>{% endif %}
+  </div>
+  <p class="acciones"><button>Guardar</button> <a class="boton secundario" href="{{ url_for('auth.usuarios') }}">Cancelar</a></p>
+</form>
+{% endblock %}

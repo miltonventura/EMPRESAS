@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block titulo %}{% endblock %} · {{ nombre_clinica() }}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='estilos.css') }}">
+  <script src="{{ url_for('static', filename='app.js') }}" defer></script>
+</head>
+<body>
+{% if g.user %}
+<header class="barra">
+  <a class="marca" href="{{ url_for('inicio') }}">{{ nombre_clinica() }}</a>
+  <nav>
+    {% set ep = request.endpoint or '' %}
+    <a href="{{ url_for('inicio') }}" class="{{ 'activo' if ep == 'inicio' }}">Inicio</a>
+    <a href="{{ url_for('citas.lista') }}" class="{{ 'activo' if ep.startswith('citas.') }}">Agenda</a>
+    <a href="{{ url_for('pacientes.lista') }}" class="{{ 'activo' if ep.startswith('pacientes.') or ep.startswith('historial.') }}">Expedientes</a>
+    {% if g.user.rol == 'admin' %}
+    <a href="{{ url_for('reportes.indicadores') }}" class="{{ 'activo' if ep.startswith('reportes.') }}">Indicadores</a>
+    <a href="{{ url_for('encuestas.lista') }}" class="{{ 'activo' if ep.startswith('encuestas.') }}">Encuestas</a>
+    <a href="{{ url_for('auth.usuarios') }}" class="{{ 'activo' if ep.startswith('auth.usuario') }}">Usuarios</a>
+    {% endif %}
+  </nav>
+  <div class="usuario">
+    <span>{{ g.user.nombre }} · {{ catalogos.ROLES[g.user.rol] }}</span>
+    <form method="post" action="{{ url_for('auth.logout') }}">
+      <input type="hidden" name="_csrf" value="{{ csrf_token() }}">
+      <button class="pequeno">Salir</button>
+    </form>
+  </div>
+</header>
+{% endif %}
+<main>
+  {% with mensajes = get_flashed_messages(with_categories=true) %}
+    {% if mensajes %}
+    <ul class="mensajes">
+      {% for categoria, mensaje in mensajes %}<li class="{{ categoria }}">{{ mensaje }}</li>{% endfor %}
+    </ul>
+    {% endif %}
+  {% endwith %}
+  {% block contenido %}{% endblock %}
+</main>
+</body>
+</html>

@@ -1,0 +1,56 @@
+{% extends 'base.html' %}
+{% from 'macros.html' import csrf, campo, area, lista %}
+{% block titulo %}Registrar consulta{% endblock %}
+{% block contenido %}
+<h1>Registrar consulta</h1>
+<div class="tarjeta">
+  <strong><a href="{{ url_for('pacientes.ver', paciente_id=paciente.id) }}">{{ paciente.nombre }}</a></strong> · {{ paciente.id|expediente }}
+  {% if paciente.fecha_nacimiento %} · {{ paciente.fecha_nacimiento|edad }}{% endif %}{% if paciente.sexo %} · {{ paciente.sexo }}{% endif %}
+  {% if cita %}<br><span class="ayuda">Cita del {{ cita.fecha_hora|fecha }} · {{ catalogos.MODALIDADES[cita.modalidad] }}</span>{% endif %}
+  {% if paciente.alergias %}<p style="margin:.5rem 0 0"><span class="etiqueta estado-cancelada">Alergias</span> {{ paciente.alergias }}</p>{% endif %}
+  {% if cita and cita.enlace_teleconsulta %}<p style="margin:.5rem 0 0"><a class="boton pequeno" href="{{ cita.enlace_teleconsulta }}" target="_blank" rel="noopener">Abrir videollamada</a></p>{% endif %}
+</div>
+<form method="post" enctype="multipart/form-data">
+  {{ csrf() }}
+  {% if cita %}<input type="hidden" name="cita_id" value="{{ cita.id }}">{% endif %}
+  <fieldset>
+    <legend>Consulta</legend>
+    <div class="rejilla">
+      {{ lista(form, 'especialidad', 'Especialidad', catalogos.ESPECIALIDADES, obligatorio=true) }}
+      {{ area(form, 'motivo', 'Motivo de consulta / historia de la enfermedad', obligatorio=true) }}
+    </div>
+  </fieldset>
+  <fieldset>
+    <legend>Signos vitales</legend>
+    <div class="rejilla">
+      {{ campo(form, 'presion_arterial', 'Presión arterial (mmHg)', extra='placeholder="120/80"') }}
+      {{ campo(form, 'frecuencia_cardiaca', 'Frecuencia cardiaca (lpm)', extra='inputmode="numeric"') }}
+      {{ campo(form, 'temperatura', 'Temperatura (°C)', extra='inputmode="decimal"') }}
+      {{ campo(form, 'peso_kg', 'Peso (kg)', extra='inputmode="decimal"') }}
+      {{ campo(form, 'talla_cm', 'Talla (cm)', extra='inputmode="decimal"') }}
+    </div>
+  </fieldset>
+  <fieldset>
+    <legend>Evaluación y plan</legend>
+    <div class="rejilla">
+      {{ area(form, 'examen_fisico', 'Examen físico') }}
+      {{ area(form, 'diagnostico', 'Diagnóstico') }}
+      {{ area(form, 'tratamiento', 'Tratamiento / receta') }}
+      {{ area(form, 'indicaciones', 'Indicaciones, exámenes solicitados y seguimiento') }}
+    </div>
+  </fieldset>
+  <fieldset>
+    <legend>Adjuntar documentos (opcional)</legend>
+    <div class="rejilla">
+      <div><label for="documentos">Archivos</label><input type="file" id="documentos" name="documentos" multiple></div>
+      <div><label for="categoria_documento">Categoría</label>
+        <select id="categoria_documento" name="categoria_documento">{% for c in catalogos.CATEGORIAS_DOCUMENTO %}<option>{{ c }}</option>{% endfor %}</select></div>
+      <div><label for="descripcion_documento">Descripción</label><input type="text" id="descripcion_documento" name="descripcion_documento"></div>
+    </div>
+  </fieldset>
+  <p class="acciones">
+    <button>Guardar consulta{{ ' y marcar cita como atendida' if cita }}</button>
+    <a class="boton secundario" href="{{ url_for('citas.ver', cita_id=cita.id) if cita else url_for('pacientes.ver', paciente_id=paciente.id) }}">Cancelar</a>
+  </p>
+</form>
+{% endblock %}

@@ -1,0 +1,15 @@
+{% extends 'base.html' %}
+{% from 'macros.html' import csrf %}
+{% block titulo %}{{ 'Editar expediente' if paciente else 'Nuevo expediente' }}{% endblock %}
+{% block contenido %}
+<h1>{{ 'Editar expediente ' ~ (paciente.id|expediente) if paciente else 'Nuevo expediente' }}</h1>
+<form method="post">
+  {{ csrf() }}
+  {% set en_cita = false %}
+  {% include 'pacientes/_campos.html' %}
+  <p class="acciones">
+    <button>Guardar</button>
+    <a class="boton secundario" href="{{ url_for('pacientes.ver', paciente_id=paciente.id) if paciente else url_for('pacientes.lista') }}">Cancelar</a>
+  </p>
+</form>
+{% endblock %}

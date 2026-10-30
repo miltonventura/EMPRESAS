@@ -1,0 +1,31 @@
+{% extends 'base.html' %}
+{% block titulo %}Consulta {{ consulta.fecha|fecha }}{% endblock %}
+{% block contenido %}
+<div class="encabezado">
+  <div>
+    <p class="ayuda" style="margin:0"><a href="{{ url_for('pacientes.ver', paciente_id=paciente.id) }}">{{ paciente.nombre }}</a> · {{ paciente.id|expediente }}</p>
+    <h1>{{ consulta.especialidad }} · {{ consulta.fecha|fecha }}</h1>
+  </div>
+  <div class="acciones">
+    {% if consulta.cita_id %}<a class="boton secundario" href="{{ url_for('citas.ver', cita_id=consulta.cita_id) }}">Ver cita</a>{% endif %}
+    <button type="button" class="secundario" onclick="window.print()">Imprimir</button>
+  </div>
+</div>
+<section class="tarjeta">
+  <dl class="datos">
+    <dt>Paciente</dt><dd>{{ paciente.nombre }}{% if paciente.dui %} · DUI {{ paciente.dui }}{% endif %}{% if paciente.fecha_nacimiento %} · {{ paciente.fecha_nacimiento|edad }}{% endif %}</dd>
+    <dt>Médico</dt><dd>{{ consulta.medico }}</dd>
+    <dt>Motivo</dt><dd style="white-space: pre-line">{{ consulta.motivo }}</dd>
+    <dt>Signos vitales</dt>
+    <dd>PA {{ consulta.presion_arterial or '—' }} · FC {{ consulta.frecuencia_cardiaca or '—' }} · T° {{ consulta.temperatura or '—' }} · Peso {{ consulta.peso_kg or '—' }} kg · Talla {{ consulta.talla_cm or '—' }} cm</dd>
+    <dt>Examen físico</dt><dd style="white-space: pre-line">{{ consulta.examen_fisico or '—' }}</dd>
+    <dt>Diagnóstico</dt><dd style="white-space: pre-line">{{ consulta.diagnostico or '—' }}</dd>
+    <dt>Tratamiento</dt><dd style="white-space: pre-line">{{ consulta.tratamiento or '—' }}</dd>
+    <dt>Indicaciones</dt><dd style="white-space: pre-line">{{ consulta.indicaciones or '—' }}</dd>
+  </dl>
+  {% if documentos %}
+  <h3>Documentos de esta consulta</h3>
+  <ul>{% for d in documentos %}<li><a href="{{ url_for('historial.documento_ver', documento_id=d.id) }}" target="_blank" rel="noopener">{{ d.nombre_original }}</a> · {{ d.categoria }}</li>{% endfor %}</ul>
+  {% endif %}
+</section>
+{% endblock %}

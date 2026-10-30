@@ -1,0 +1,16 @@
+{% extends 'base.html' %}
+{% from 'macros.html' import csrf %}
+{% block titulo %}Configuración inicial{% endblock %}
+{% block contenido %}
+<div class="tarjeta" style="max-width: 460px; margin: 3rem auto;">
+  <h1>Bienvenido</h1>
+  <p>Cree la cuenta del administrador. Luego podrá registrar a médicos y personal de recepción.</p>
+  <form method="post">
+    {{ csrf() }}
+    <p><label for="nombre" class="obligatorio">Nombre completo</label><input type="text" id="nombre" name="nombre" required value="{{ request.form.nombre }}"></p>
+    <p><label for="usuario" class="obligatorio">Usuario</label><input type="text" id="usuario" name="usuario" required value="{{ request.form.usuario }}"></p>
+    <p><label for="password" class="obligatorio">Contraseña</label><input type="password" id="password" name="password" required minlength="8" autocomplete="new-password"><span class="ayuda">Mínimo 8 caracteres.</span></p>
+    <button>Crear administrador</button>
+  </form>
+</div>
+{% endblock %}

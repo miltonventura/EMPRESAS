@@ -1,0 +1,136 @@
+{% extends 'base.html' %}
+{% from 'macros.html' import csrf, estado, modalidad %}
+{% block titulo %}{{ paciente.nombre }}{% endblock %}
+{% block contenido %}
+<div class="encabezado">
+  <div>
+    <p class="ayuda" style="margin:0">Expediente {{ paciente.id|expediente }}</p>
+    <h1>{{ paciente.nombre }}</h1>
+  </div>
+  <div class="acciones">
+    <a class="boton" href="{{ url_for('citas.nueva', paciente_id=paciente.id) }}">Agendar cita</a>
+    {% if puede_ver_clinico() %}<a class="boton secundario" href="{{ url_for('historial.consulta_nueva', paciente_id=paciente.id) }}">Registrar consulta</a>{% endif %}
+    <a class="boton secundario" href="{{ url_for('pacientes.editar', paciente_id=paciente.id) }}">Editar datos</a>
+  </div>
+</div>
+
+<div class="columnas">
+  <section class="tarjeta">
+    <h2>Datos personales</h2>
+    <dl class="datos">
+      <dt>DUI</dt><dd>{{ paciente.dui or 'Sin DUI (menor de edad)' }}</dd>
+      {% if paciente.responsable_nombre %}<dt>Responsable</dt><dd>{{ paciente.responsable_nombre }}{% if paciente.responsable_dui %} · DUI {{ paciente.responsable_dui }}{% endif %}</dd>{% endif %}
+      <dt>Celular</dt><dd>{{ paciente.celular }}</dd>
+      <dt>Correo</dt><dd>{{ paciente.correo or '—' }}</dd>
+      <dt>Nacimiento</dt><dd>{% if paciente.fecha_nacimiento %}{{ paciente.fecha_nacimiento|fecha }} ({{ paciente.fecha_nacimiento|edad }}){% else %}—{% endif %}</dd>
+      <dt>Sexo</dt><dd>{{ paciente.sexo or '—' }}</dd>
+      <dt>Dirección</dt><dd>{{ paciente.direccion or '—' }}</dd>
+      <dt>Seguro médico</dt><dd>{% if paciente.aseguradora %}{{ paciente.aseguradora }}{% if paciente.poliza %} · Póliza {{ paciente.poliza }}{% endif %}{% else %}No registrado{% endif %}</dd>
+    </dl>
+    {% if puede_ver_clinico() and (paciente.alergias or paciente.antecedentes) %}
+    <h3>Alergias y antecedentes</h3>
+    <dl class="datos">
+      <dt>Alergias</dt><dd>{{ paciente.alergias or '—' }}</dd>
+      <dt>Antecedentes</dt><dd style="white-space: pre-line">{{ paciente.antecedentes or '—' }}</dd>
+    </dl>
+    {% endif %}
+  </section>
+  <section class="tarjeta">
+    <h2>Origen del paciente</h2>
+    <dl class="datos">
+      <dt>Se enteró por</dt><dd><strong>{{ paciente.medio_enterado }}</strong>{% if paciente.medio_detalle %}<br>{{ paciente.medio_detalle }}{% endif %}</dd>
+      <dt>Registrado</dt><dd>{{ paciente.creado|fecha }}</dd>
+    </dl>
+    <h3>Referencias recibidas</h3>
+    {% for r in referencias %}
+      <p style="margin:.3rem 0"><strong>{{ r.centro_referencia }}</strong>{% if r.medico_referente %} · {{ r.medico_referente }}{% endif %}<br>
+      <span class="ayuda">{{ r.fecha_hora|fecha }} · {{ r.especialidad }}{% if r.motivo_referencia %} · {{ r.motivo_referencia }}{% endif %}</span></p>
+    {% else %}<p class="vacio">Sin referencias de otros centros.</p>{% endfor %}
+  </section>
+</div>
+
+<section class="tarjeta tabla-scroll">
+  <h2>Citas</h2>
+  {% if citas %}
+  <table>
+    <thead><tr><th>Fecha</th><th>Especialidad</th><th>Médico</th><th>Modalidad</th><th>Seguro</th><th>Estado</th><th>Satisfacción</th></tr></thead>
+    <tbody>
+    {% for c in citas %}
+      <tr>
+        <td><a href="{{ url_for('citas.ver', cita_id=c.id) }}">{{ c.fecha_hora|fecha }}</a></td>
+        <td>{{ c.especialidad }}</td>
+        <td>{{ c.medico or '—' }}</td>
+        <td>{{ modalidad(c.modalidad) }}</td>
+        <td>{{ c.aseguradora if c.usa_seguro else 'No' }}</td>
+        <td>{{ estado(c.estado) }}</td>
+        <td>{% if c.respondida_en %}{{ c.calif_general }}/5{% elif c.encuesta_token %}<span class="ayuda">Pendiente</span>{% else %}—{% endif %}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}<p class="vacio">Sin citas registradas.</p>{% endif %}
+</section>
+
+{% if puede_ver_clinico() %}
+<section class="tarjeta tabla-scroll">
+  <h2>Historial clínico</h2>
+  {% if consultas %}
+  <table>
+    <thead><tr><th>Fecha</th><th>Especialidad</th><th>Médico</th><th>Motivo</th><th>Diagnóstico</th></tr></thead>
+    <tbody>
+    {% for k in consultas %}
+      <tr>
+        <td><a href="{{ url_for('historial.consulta_ver', consulta_id=k.id) }}">{{ k.fecha|fecha }}</a></td>
+        <td>{{ k.especialidad }}</td><td>{{ k.medico }}</td>
+        <td>{{ k.motivo|truncate(60) }}</td><td>{{ (k.diagnostico or '—')|truncate(60) }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}<p class="vacio">Aún no hay consultas registradas.</p>{% endif %}
+</section>
+{% endif %}
+
+<section class="tarjeta" id="documentos">
+  <h2>Documentos y exámenes</h2>
+  {% if documentos %}
+  <div class="tabla-scroll">
+  <table>
+    <thead><tr><th>Archivo</th><th>Categoría</th><th>Descripción</th><th>Subido</th><th class="num">Tamaño</th><th></th></tr></thead>
+    <tbody>
+    {% for d in documentos %}
+      <tr>
+        <td><a href="{{ url_for('historial.documento_ver', documento_id=d.id) }}" target="_blank" rel="noopener">{{ d.nombre_original }}</a></td>
+        <td>{{ d.categoria }}</td>
+        <td>{{ d.descripcion or '—' }}{% if d.consulta_id and puede_ver_clinico() %}<br><a class="ayuda" href="{{ url_for('historial.consulta_ver', consulta_id=d.consulta_id) }}">Ver consulta</a>{% endif %}</td>
+        <td>{{ d.creado|fecha }}<br><span class="ayuda">{{ d.subido_por_nombre or '' }}</span></td>
+        <td class="num">{{ d.tamano|tamano }}</td>
+        <td class="acciones">
+          <a class="boton pequeno secundario" href="{{ url_for('historial.documento_ver', documento_id=d.id, descargar=1) }}">Descargar</a>
+          {% if puede_ver_clinico() %}
+          <form method="post" action="{{ url_for('historial.documento_eliminar', documento_id=d.id) }}" data-confirmar="¿Eliminar este documento del expediente?">
+            {{ csrf() }}<button class="pequeno peligro">Eliminar</button>
+          </form>
+          {% endif %}
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% else %}<p class="vacio">No hay documentos adjuntos.</p>{% endif %}
+
+  <h3>Adjuntar documentos</h3>
+  <form method="post" enctype="multipart/form-data" action="{{ url_for('historial.documentos_subir', paciente_id=paciente.id) }}">
+    {{ csrf() }}
+    <div class="rejilla">
+      <div><label for="documentos" class="obligatorio">Archivos</label><input type="file" id="documentos" name="documentos" multiple required>
+        <p class="ayuda">PDF, imágenes, Word, Excel o DICOM. Máximo 25 MB en total.</p></div>
+      <div><label for="categoria" class="obligatorio">Categoría</label>
+        <select id="categoria" name="categoria" required>{% for c in catalogos.CATEGORIAS_DOCUMENTO %}<option>{{ c }}</option>{% endfor %}</select></div>
+      <div><label for="descripcion">Descripción</label><input type="text" id="descripcion" name="descripcion" placeholder="Ej.: Hemograma 12/10/2026"></div>
+    </div>
+    <p><button>Adjuntar al expediente</button></p>
+  </form>
+</section>
+{% endblock %}

@@ -1,0 +1,81 @@
+{% extends 'base.html' %}
+{% from 'macros.html' import csrf, estado, modalidad %}
+{% block titulo %}Cita de {{ cita.paciente }}{% endblock %}
+{% block contenido %}
+<div class="encabezado">
+  <div>
+    <p class="ayuda" style="margin:0">Cita n.º {{ cita.id }}</p>
+    <h1>{{ cita.especialidad }} · {{ cita.fecha_hora|fecha }}</h1>
+  </div>
+  <div class="acciones">
+    {% if cita.estado in ('programada', 'confirmada') %}
+      {% if puede_ver_clinico() %}<a class="boton" href="{{ url_for('historial.consulta_nueva', paciente_id=cita.paciente_id, cita_id=cita.id) }}">Atender / registrar consulta</a>{% endif %}
+      <a class="boton secundario" href="{{ url_for('citas.editar', cita_id=cita.id) }}">Reprogramar / editar</a>
+    {% endif %}
+    {% if consulta %}<a class="boton secundario" href="{{ url_for('historial.consulta_ver', consulta_id=consulta.id) }}">Ver nota de consulta</a>{% endif %}
+  </div>
+</div>
+
+<div class="columnas">
+  <section class="tarjeta">
+    <h2>Detalle</h2>
+    <dl class="datos">
+      <dt>Paciente</dt><dd><a href="{{ url_for('pacientes.ver', paciente_id=cita.paciente_id) }}">{{ cita.paciente }}</a> · {{ cita.paciente_id|expediente }}</dd>
+      <dt>DUI</dt><dd>{{ cita.dui or '—' }}</dd>
+      <dt>Contacto</dt><dd>{{ cita.celular }}{% if cita.correo %} · {{ cita.correo }}{% endif %}</dd>
+      <dt>Médico</dt><dd>{{ cita.medico or 'Sin asignar' }}</dd>
+      <dt>Horario</dt><dd>{{ cita.fecha_hora|fecha }} ({{ cita.duracion_min }} min)</dd>
+      <dt>Modalidad</dt><dd>{{ modalidad(cita.modalidad) }}</dd>
+      <dt>Estado</dt><dd>{{ estado(cita.estado) }}</dd>
+      <dt>Motivo</dt><dd>{{ cita.motivo or '—' }}</dd>
+      <dt>Seguro médico</dt><dd>{% if cita.usa_seguro %}Sí · {{ cita.aseguradora }}{% if cita.poliza %} · Póliza {{ cita.poliza }}{% endif %}{% else %}No (consulta privada){% endif %}</dd>
+      <dt>Referencia</dt><dd>{% if cita.tiene_referencia %}{{ cita.centro_referencia }}{% if cita.medico_referente %} · {{ cita.medico_referente }}{% endif %}{% if cita.motivo_referencia %}<br>{{ cita.motivo_referencia }}{% endif %}{% else %}No{% endif %}</dd>
+    </dl>
+  </section>
+
+  <section>
+    {% if cita.enlace_teleconsulta %}
+    <div class="tarjeta">
+      <h2>Teleconsulta</h2>
+      <p class="enlace-copiar"><input type="text" id="enlace-tele" value="{{ cita.enlace_teleconsulta }}" readonly aria-label="Enlace de la teleconsulta"><button type="button" class="pequeno secundario" data-copiar="enlace-tele">Copiar</button></p>
+      <p class="acciones">
+        <a class="boton" href="{{ cita.enlace_teleconsulta }}" target="_blank" rel="noopener">Iniciar videollamada</a>
+      </p>
+      <p class="ayuda">Comparta el enlace con el paciente; ambos ingresan a la misma sala desde el navegador o la app, sin instalar nada adicional.</p>
+    </div>
+    {% endif %}
+
+    <div class="tarjeta">
+      <h2>Comunicación</h2>
+      <p><a class="boton secundario" href="{{ whatsapp_cita }}" target="_blank" rel="noopener">Enviar recordatorio por WhatsApp</a></p>
+      {% if cita.correo %}<p><a href="mailto:{{ cita.correo }}?subject={{ ('Su cita en ' ~ nombre_clinica())|urlencode }}">Enviar correo</a></p>{% endif %}
+    </div>
+
+    {% if enlace_encuesta %}
+    <div class="tarjeta">
+      <h2>Encuesta de satisfacción</h2>
+      {% if cita.respondida_en %}
+        <p>Respondida el {{ cita.respondida_en|fecha }}.</p>
+      {% else %}
+        <p class="enlace-copiar"><input type="text" id="enlace-encuesta" value="{{ enlace_encuesta }}" readonly aria-label="Enlace de la encuesta"><button type="button" class="pequeno secundario" data-copiar="enlace-encuesta">Copiar</button></p>
+        <p><a class="boton secundario" href="{{ whatsapp_encuesta }}" target="_blank" rel="noopener">Enviar encuesta por WhatsApp</a></p>
+        <p class="ayuda">El paciente puede responderla desde su celular. También puede abrirla en una tableta en recepción.</p>
+      {% endif %}
+    </div>
+    {% endif %}
+
+    <div class="tarjeta">
+      <h2>Cambiar estado</h2>
+      <div class="acciones">
+      {% for k, v in catalogos.ESTADOS_CITA.items() if k != cita.estado and (k != 'atendida' or not puede_ver_clinico()) %}
+        <form method="post" action="{{ url_for('citas.cambiar_estado', cita_id=cita.id) }}" {% if k == 'cancelada' %}data-confirmar="¿Cancelar esta cita?"{% endif %}>
+          {{ csrf() }}<input type="hidden" name="estado" value="{{ k }}">
+          <button class="pequeno {{ 'peligro' if k == 'cancelada' else 'secundario' }}">{{ v }}</button>
+        </form>
+      {% endfor %}
+      </div>
+      {% if puede_ver_clinico() and cita.estado != 'atendida' %}<p class="ayuda">Para marcarla como atendida, registre la consulta.</p>{% endif %}
+    </div>
+  </section>
+</div>
+{% endblock %}

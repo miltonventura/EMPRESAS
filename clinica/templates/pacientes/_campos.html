@@ -1,0 +1,35 @@
+{# Campos del paciente. Variables: form, en_cita (true cuando se usa dentro del formulario de cita). #}
+{% from 'macros.html' import campo, area, lista, casilla, aseguradoras %}
+<fieldset>
+  <legend>Datos del paciente</legend>
+  <div class="rejilla">
+    {{ campo(form, 'nombre', 'Nombre completo', obligatorio=true, clase='ancho') }}
+    {{ campo(form, 'dui', 'DUI', ayuda='Formato 12345678-9. Déjelo vacío si es menor de edad.', extra='inputmode="numeric" maxlength="10" placeholder="12345678-9"') }}
+    {{ campo(form, 'celular', 'Celular', tipo='tel', obligatorio=true, extra='inputmode="tel" placeholder="7123-4567"') }}
+    {{ campo(form, 'correo', 'Correo electrónico', tipo='email') }}
+    {{ campo(form, 'fecha_nacimiento', 'Fecha de nacimiento', tipo='date') }}
+    {{ lista(form, 'sexo', 'Sexo', ['Femenino', 'Masculino']) }}
+  </div>
+  <div class="rejilla" data-mostrar-si="!dui" style="margin-top: .75rem">
+    <p class="ancho ayuda" style="margin:0">Paciente menor de edad o sin DUI: ingrese los datos de la madre, padre o responsable.</p>
+    {{ campo(form, 'responsable_nombre', 'Nombre del responsable') }}
+    {{ campo(form, 'responsable_dui', 'DUI del responsable', extra='inputmode="numeric" maxlength="10" placeholder="12345678-9"') }}
+  </div>
+  {% if not en_cita %}
+  <div class="rejilla" style="margin-top: .75rem">
+    {{ campo(form, 'direccion', 'Dirección', clase='ancho') }}
+    {{ campo(form, 'aseguradora', 'Aseguradora habitual', extra='list="aseguradoras"') }}
+    {{ campo(form, 'poliza', 'N.º de póliza / carné') }}
+    {{ aseguradoras() }}
+    {{ area(form, 'alergias', 'Alergias') }}
+    {{ area(form, 'antecedentes', 'Antecedentes médicos relevantes') }}
+  </div>
+  {% endif %}
+</fieldset>
+<fieldset>
+  <legend>¿Cómo se enteró de la clínica?</legend>
+  <div class="rejilla">
+    {{ lista(form, 'medio_enterado', 'Medio', catalogos.MEDIOS_ENTERADO, obligatorio=true) }}
+    <div data-mostrar-si="medio_enterado=Otro">{{ campo(form, 'medio_detalle', 'Especifique') }}</div>
+  </div>
+</fieldset>

@@ -1,0 +1,8 @@
+{% extends 'base.html' %}
+{% block titulo %}Gracias{% endblock %}
+{% block contenido %}
+<div class="encuesta tarjeta">
+  <h1>¡Gracias!</h1>
+  <p>{{ 'Esta encuesta ya fue respondida.' if ya_respondida else 'Recibimos sus respuestas.' }} Agradecemos su confianza en {{ nombre_clinica() }}.</p>
+</div>
+{% endblock %}

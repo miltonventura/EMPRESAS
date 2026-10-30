@@ -1,0 +1,81 @@
+{% extends 'base.html' %}
+{% from 'macros.html' import csrf, campo, area, lista, casilla, aseguradoras %}
+{% block titulo %}{{ 'Reprogramar cita' if cita else 'Agendar cita' }}{% endblock %}
+{% block contenido %}
+<h1>{{ 'Modificar cita' if cita else 'Agendar cita' }}</h1>
+<form method="post" enctype="multipart/form-data">
+  {{ csrf() }}
+  {% if paciente %}
+    <input type="hidden" name="paciente_id" value="{{ paciente.id }}">
+    <div class="tarjeta">
+      <strong>{{ paciente.nombre }}</strong> · {{ paciente.id|expediente }} · DUI {{ paciente.dui or ('resp. ' ~ paciente.responsable_dui) }} · {{ paciente.celular }}
+      {% if paciente.correo %} · {{ paciente.correo }}{% endif %}
+      <a href="{{ url_for('pacientes.editar', paciente_id=paciente.id) }}" class="ayuda">Actualizar datos</a>
+    </div>
+  {% else %}
+    <p class="ayuda">Si el DUI ya tiene expediente, la cita se agregará automáticamente a ese expediente.
+      ¿Paciente ya registrado? <a href="{{ url_for('pacientes.lista') }}">Búsquelo</a> y use «Agendar cita» desde su expediente.</p>
+    {% set en_cita = true %}
+    {% include 'pacientes/_campos.html' %}
+  {% endif %}
+
+  <fieldset>
+    <legend>Cita</legend>
+    <div class="rejilla">
+      {{ lista(form, 'especialidad', 'Especialidad', catalogos.ESPECIALIDADES, obligatorio=true) }}
+      <div>
+        <label for="medico_id">Médico</label>
+        <select id="medico_id" name="medico_id">
+          <option value="">Sin asignar</option>
+          {% for m in medicos %}
+          <option value="{{ m.id }}" data-especialidad="{{ m.especialidad }}" {{ 'selected' if (form.get('medico_id') or '')|string == m.id|string }}>{{ m.nombre }} — {{ m.especialidad }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      {{ lista(form, 'modalidad', 'Modalidad', catalogos.MODALIDADES.items(), obligatorio=true) }}
+      {{ campo(form, 'fecha', 'Fecha', tipo='date', obligatorio=true) }}
+      {{ campo(form, 'hora', 'Hora', tipo='time', obligatorio=true, extra='step="300"') }}
+      {{ campo(form, 'duracion_min', 'Duración (minutos)', tipo='number', extra='min="5" max="240" step="5"') }}
+      {{ area(form, 'motivo', 'Motivo de la consulta') }}
+    </div>
+    <p class="ayuda" data-mostrar-si="modalidad=teleconsulta">Se generará automáticamente un enlace de videollamada para la teleconsulta.</p>
+  </fieldset>
+
+  <fieldset>
+    <legend>Seguro médico</legend>
+    {{ casilla(form, 'usa_seguro', 'El paciente utilizará seguro médico en esta cita') }}
+    <div class="rejilla" data-mostrar-si="usa_seguro" style="margin-top:.75rem">
+      {{ campo(form, 'cita_aseguradora', 'Aseguradora', extra='list="aseguradoras"') }}
+      {{ campo(form, 'cita_poliza', 'N.º de póliza / carné') }}
+      {{ aseguradoras() }}
+    </div>
+  </fieldset>
+
+  <fieldset>
+    <legend>Referencia</legend>
+    {{ casilla(form, 'tiene_referencia', 'El paciente viene referido de otro centro médico') }}
+    <div class="rejilla" data-mostrar-si="tiene_referencia" style="margin-top:.75rem">
+      {{ campo(form, 'centro_referencia', 'Centro médico que refiere') }}
+      {{ campo(form, 'medico_referente', 'Médico que refiere') }}
+      {{ area(form, 'motivo_referencia', 'Motivo de la referencia') }}
+    </div>
+  </fieldset>
+
+  {% if not cita %}
+  <fieldset>
+    <legend>Adjuntar documentos (opcional)</legend>
+    <div class="rejilla">
+      <div><label for="documentos">Hoja de referencia, exámenes previos…</label><input type="file" id="documentos" name="documentos" multiple></div>
+      <div><label for="categoria_documento">Categoría</label>
+        <select id="categoria_documento" name="categoria_documento">{% for c in catalogos.CATEGORIAS_DOCUMENTO %}<option {{ 'selected' if c == 'Hoja de referencia' }}>{{ c }}</option>{% endfor %}</select></div>
+      <div><label for="descripcion_documento">Descripción</label><input type="text" id="descripcion_documento" name="descripcion_documento"></div>
+    </div>
+  </fieldset>
+  {% endif %}
+
+  <p class="acciones">
+    <button>{{ 'Guardar cambios' if cita else 'Agendar cita' }}</button>
+    <a class="boton secundario" href="{{ url_for('citas.ver', cita_id=cita.id) if cita else url_for('citas.lista') }}">Cancelar</a>
+  </p>
+</form>
+{% endblock %}

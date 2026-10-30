@@ -1,0 +1,51 @@
+{% extends 'base.html' %}
+{% from 'macros.html' import csrf, estado, modalidad %}
+{% block titulo %}Agenda{% endblock %}
+{% block contenido %}
+<div class="encabezado">
+  <h1>Agenda del {{ dia.isoformat()|fecha }}</h1>
+  <a class="boton" href="{{ url_for('citas.nueva', fecha=dia.isoformat()) }}">Agendar cita</a>
+</div>
+<form class="filtros" method="get">
+  <div><label for="fecha">Fecha</label><input type="date" id="fecha" name="fecha" value="{{ dia.isoformat() }}"></div>
+  <div><label for="especialidad">Especialidad</label>
+    <select id="especialidad" name="especialidad"><option value="">Todas</option>
+      {% for e in catalogos.ESPECIALIDADES %}<option {{ 'selected' if e == especialidad }}>{{ e }}</option>{% endfor %}</select></div>
+  <div><label for="medico_id">Médico</label>
+    <select id="medico_id" name="medico_id"><option value="">Todos</option>
+      {% for m in medicos %}<option value="{{ m.id }}" data-especialidad="{{ m.especialidad }}" {{ 'selected' if m.id|string == medico_id|string }}>{{ m.nombre }}</option>{% endfor %}</select></div>
+  <div><label for="estado">Estado</label>
+    <select id="estado" name="estado"><option value="">Todos</option>
+      {% for k, v in catalogos.ESTADOS_CITA.items() %}<option value="{{ k }}" {{ 'selected' if k == estado }}>{{ v }}</option>{% endfor %}</select></div>
+  <button>Filtrar</button>
+  <a class="boton secundario" href="{{ url_for('citas.lista', fecha=anterior, especialidad=especialidad, medico_id=medico_id, estado=estado) }}">← Día anterior</a>
+  <a class="boton secundario" href="{{ url_for('citas.lista', fecha=siguiente, especialidad=especialidad, medico_id=medico_id, estado=estado) }}">Día siguiente →</a>
+</form>
+<div class="tarjeta tabla-scroll">
+  {% if citas %}
+  <table>
+    <thead><tr><th>Hora</th><th>Paciente</th><th>Especialidad</th><th>Médico</th><th>Modalidad</th><th>Estado</th><th></th></tr></thead>
+    <tbody>
+    {% for c in citas %}
+      <tr>
+        <td><a href="{{ url_for('citas.ver', cita_id=c.id) }}">{{ c.fecha_hora|hora }}</a><br><span class="ayuda">{{ c.duracion_min }} min</span></td>
+        <td><a href="{{ url_for('pacientes.ver', paciente_id=c.paciente_id) }}">{{ c.paciente }}</a><br><span class="ayuda">{{ c.celular }}</span></td>
+        <td>{{ c.especialidad }}{% if c.tiene_referencia %}<br><span class="ayuda">Referido</span>{% endif %}</td>
+        <td>{{ c.medico or '—' }}</td>
+        <td>{{ modalidad(c.modalidad) }}{% if c.enlace_teleconsulta and c.estado in ('programada', 'confirmada') %}<br><a href="{{ c.enlace_teleconsulta }}" target="_blank" rel="noopener">Unirse</a>{% endif %}</td>
+        <td>{{ estado(c.estado) }}</td>
+        <td class="acciones">
+          {% if c.estado == 'programada' %}
+          <form method="post" action="{{ url_for('citas.cambiar_estado', cita_id=c.id) }}">{{ csrf() }}<input type="hidden" name="estado" value="confirmada"><input type="hidden" name="volver" value="{{ request.full_path }}"><button class="pequeno secundario">Confirmar</button></form>
+          {% endif %}
+          {% if c.estado in ('programada', 'confirmada') and puede_ver_clinico() %}
+          <a class="boton pequeno" href="{{ url_for('historial.consulta_nueva', paciente_id=c.paciente_id, cita_id=c.id) }}">Atender</a>
+          {% endif %}
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}<p class="vacio">No hay citas para este día con los filtros seleccionados.</p>{% endif %}
+</div>
+{% endblock %}

@@ -1,0 +1,37 @@
+{% extends 'base.html' %}
+{% from 'macros.html' import estado, modalidad %}
+{% block titulo %}Inicio{% endblock %}
+{% block contenido %}
+<div class="encabezado">
+  <h1>Hola, {{ g.user.nombre.split(' ')[0] }}</h1>
+  <div class="acciones">
+    <a class="boton" href="{{ url_for('citas.nueva') }}">Agendar cita</a>
+    <a class="boton secundario" href="{{ url_for('pacientes.lista') }}">Buscar expediente</a>
+  </div>
+</div>
+<div class="kpis">
+  <div class="kpi"><div class="titulo">{{ 'Mis citas de hoy' if g.user.rol == 'medico' else 'Citas de hoy' }}</div><div class="valor">{{ resumen.citas_hoy }}</div></div>
+  <div class="kpi"><div class="titulo">Pendientes de atender hoy</div><div class="valor">{{ resumen.pendientes_hoy }}</div></div>
+  <div class="kpi"><div class="titulo">Teleconsultas hoy</div><div class="valor">{{ resumen.teleconsultas_hoy }}</div></div>
+  <div class="kpi"><div class="titulo">Expedientes</div><div class="valor">{{ resumen.pacientes }}</div></div>
+  <div class="kpi"><div class="titulo">Encuestas sin responder</div><div class="valor">{{ resumen.encuestas_sin_responder }}</div></div>
+</div>
+<section class="tarjeta tabla-scroll">
+  <h2>Agenda de hoy</h2>
+  {% if citas_hoy %}
+  <table>
+    <thead><tr><th>Hora</th><th>Paciente</th><th>Especialidad</th><th>Médico</th><th>Modalidad</th><th>Estado</th></tr></thead>
+    <tbody>
+    {% for c in citas_hoy %}
+      <tr>
+        <td><a href="{{ url_for('citas.ver', cita_id=c.id) }}">{{ c.fecha_hora|hora }}</a></td>
+        <td><a href="{{ url_for('pacientes.ver', paciente_id=c.paciente_id) }}">{{ c.paciente }}</a></td>
+        <td>{{ c.especialidad }}</td><td>{{ c.medico or '—' }}</td>
+        <td>{{ modalidad(c.modalidad) }}</td><td>{{ estado(c.estado) }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}<p class="vacio">No hay citas para hoy.</p>{% endif %}
+</section>
+{% endblock %}

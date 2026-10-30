@@ -1,0 +1,73 @@
+{% extends 'base.html' %}
+{% from 'macros.html' import barras %}
+{% macro prom(v) %}{{ '%.2f'|format(v) if v is not none else '—' }}{% endmacro %}
+{% macro tabla_grupos(grupos, titulo) %}
+  <h3>{{ titulo }}</h3>
+  {% if grupos %}
+  <div class="tabla-scroll"><table>
+    <thead><tr><th></th>{% for campo, _, _ in catalogos.PREGUNTAS_ENCUESTA %}<th class="num">{{ catalogos.ETIQUETAS_CORTAS[campo] }}</th>{% endfor %}<th class="num">NPS</th><th class="num">Respuestas</th></tr></thead>
+    <tbody>
+    {% for nombre, p in grupos.items() %}
+      <tr><td>{{ catalogos.MODALIDADES.get(nombre, nombre) }}</td>
+        {% for campo, _, _ in catalogos.PREGUNTAS_ENCUESTA %}<td class="num">{{ prom(p[campo]) }}</td>{% endfor %}
+        <td class="num">{{ p.nps if p.nps is not none else '—' }}</td><td class="num">{{ p.n }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table></div>
+  {% else %}<p class="vacio">Sin respuestas en el periodo.</p>{% endif %}
+{% endmacro %}
+{% block titulo %}Indicadores{% endblock %}
+{% block contenido %}
+<div class="encabezado"><h1>Indicadores</h1></div>
+<form class="filtros" method="get">
+  <div><label for="desde">Desde</label><input type="date" id="desde" name="desde" value="{{ desde }}"></div>
+  <div><label for="hasta">Hasta</label><input type="date" id="hasta" name="hasta" value="{{ hasta }}"></div>
+  <button>Actualizar</button>
+</form>
+
+{% set s = satisfaccion %}
+<h2>Experiencia del paciente</h2>
+<div class="kpis">
+  <div class="kpi"><div class="titulo">Satisfacción general (1–5)</div><div class="valor">{{ prom(s.general.calif_general) }}</div></div>
+  <div class="kpi"><div class="titulo">Atención del médico (1–5)</div><div class="valor">{{ prom(s.general.calif_medico) }}</div></div>
+  <div class="kpi"><div class="titulo">Atención de recepción (1–5)</div><div class="valor">{{ prom(s.general.calif_recepcion) }}</div></div>
+  <div class="kpi"><div class="titulo">NPS (−100 a 100)</div><div class="valor">{{ s.general.nps if s.general.nps is not none else '—' }}</div></div>
+  <div class="kpi"><div class="titulo">Tasa de respuesta</div><div class="valor">{{ (s.tasa_respuesta ~ '%') if s.tasa_respuesta is not none else '—' }}</div><div class="titulo">{{ s.general.n }} de {{ s.enviadas }} encuestas</div></div>
+</div>
+<section class="tarjeta">
+  <h3>Distribución de la satisfacción general</h3>
+  {% set total = s.general.n or 1 %}
+  {% for n in s.distribucion_general %}
+  <div class="barra-h">
+    <span>{{ loop.index }} · {{ catalogos.ESCALA[loop.index] }}</span>
+    <span class="pista" role="presentation"><span class="relleno" style="width: {{ (100 * n / total)|round|int }}%"></span></span>
+    <span class="cifra">{{ n }} · {{ (100 * n / total)|round|int }}%</span>
+  </div>
+  {% endfor %}
+  {{ tabla_grupos(s.por_especialidad, 'Por especialidad') }}
+  {{ tabla_grupos(s.por_medico, 'Por médico') }}
+  {{ tabla_grupos(s.por_modalidad, 'Por modalidad') }}
+  <p class="ayuda">Promedios en escala de 1 (muy insatisfecho) a 5 (muy satisfecho). NPS = % de pacientes que puntúan 9–10 menos % que puntúan 0–6.
+    <a href="{{ url_for('encuestas.lista', desde=desde, hasta=hasta) }}">Ver respuestas y comentarios</a>.</p>
+</section>
+
+<h2>¿Cómo se enteraron de la clínica?</h2>
+<div class="columnas">
+  <section class="tarjeta"><h3>Pacientes nuevos del periodo</h3>{{ barras(medios_periodo) }}</section>
+  <section class="tarjeta"><h3>Todos los expedientes</h3>{{ barras(medios_total, 'Aún no hay expedientes.') }}</section>
+</div>
+
+<h2>Citas del periodo</h2>
+<div class="columnas">
+  <section class="tarjeta">
+    <h3>Por especialidad</h3>{{ barras(citas.por_especialidad) }}
+    <h3>Por estado</h3>{{ barras(citas.por_estado) }}
+    <h3>Por modalidad</h3>{{ barras(citas.por_modalidad) }}
+  </section>
+  <section class="tarjeta">
+    <h3>Uso de seguro médico</h3>{{ barras(citas.seguro) }}
+    <h3>Aseguradoras</h3>{{ barras(citas.aseguradoras, 'Ninguna cita con seguro en el periodo.') }}
+    <h3>Centros que refieren pacientes</h3>{{ barras(citas.referencias, 'Sin referencias en el periodo.') }}
+  </section>
+</div>
+{% endblock %}

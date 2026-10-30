@@ -1,0 +1,55 @@
+{% macro csrf() %}<input type="hidden" name="_csrf" value="{{ csrf_token() }}">{% endmacro %}
+
+{% macro estado(valor) %}<span class="etiqueta estado-{{ valor }}">{{ catalogos.ESTADOS_CITA[valor] }}</span>{% endmacro %}
+
+{% macro modalidad(valor) %}{% if valor == 'teleconsulta' %}<span class="etiqueta tele">Teleconsulta</span>{% else %}<span class="etiqueta">Presencial</span>{% endif %}{% endmacro %}
+
+{% macro campo(form, nombre, etiqueta, tipo='text', obligatorio=false, ayuda=none, clase='', extra='') %}
+<div class="{{ clase }}">
+  <label for="{{ nombre }}" class="{{ 'obligatorio' if obligatorio }}">{{ etiqueta }}</label>
+  <input type="{{ tipo }}" id="{{ nombre }}" name="{{ nombre }}" value="{{ form.get(nombre) or '' }}" {{ 'required' if obligatorio }} {{ extra|safe }}>
+  {% if ayuda %}<p class="ayuda">{{ ayuda }}</p>{% endif %}
+</div>
+{% endmacro %}
+
+{% macro area(form, nombre, etiqueta, clase='ancho', obligatorio=false) %}
+<div class="{{ clase }}">
+  <label for="{{ nombre }}" class="{{ 'obligatorio' if obligatorio }}">{{ etiqueta }}</label>
+  <textarea id="{{ nombre }}" name="{{ nombre }}" {{ 'required' if obligatorio }}>{{ form.get(nombre) or '' }}</textarea>
+</div>
+{% endmacro %}
+
+{% macro lista(form, nombre, etiqueta, opciones, obligatorio=false, vacio='Seleccione…', clase='') %}
+<div class="{{ clase }}">
+  <label for="{{ nombre }}" class="{{ 'obligatorio' if obligatorio }}">{{ etiqueta }}</label>
+  <select id="{{ nombre }}" name="{{ nombre }}" {{ 'required' if obligatorio }}>
+    <option value="">{{ vacio }}</option>
+    {% for op in opciones %}
+      {% if op is string %}{% set valor, texto = op, op %}{% else %}{% set valor, texto = op %}{% endif %}
+      <option value="{{ valor }}" {{ 'selected' if (form.get(nombre) or '')|string == valor|string }}>{{ texto }}</option>
+    {% endfor %}
+  </select>
+</div>
+{% endmacro %}
+
+{% macro casilla(form, nombre, etiqueta) %}
+<label class="casilla"><input type="checkbox" id="{{ nombre }}" name="{{ nombre }}" value="1" {{ 'checked' if form.get(nombre) in (1, '1', 'on', true) }}> {{ etiqueta }}</label>
+{% endmacro %}
+
+{% macro barras(items, vacio='Sin datos en el periodo.') %}
+{% if items %}
+  {% for i in items %}
+  <div class="barra-h">
+    <span>{{ i.etiqueta or 'Sin especificar' }}</span>
+    <span class="pista" role="presentation"><span class="relleno" style="width: {{ i.pct }}%"></span></span>
+    <span class="cifra">{{ i.n }} · {{ i.pct }}%</span>
+  </div>
+  {% endfor %}
+{% else %}<p class="vacio">{{ vacio }}</p>{% endif %}
+{% endmacro %}
+
+{% macro aseguradoras() %}
+<datalist id="aseguradoras">
+  {% for a in ['ASESUISA', 'SISA', 'MAPFRE', 'Pan-American Life', 'Davivienda Seguros', 'Seguros Azul', 'BMI', 'Seguros del Pacífico'] %}<option value="{{ a }}">{% endfor %}
+</datalist>
+{% endmacro %}
